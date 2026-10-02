@@ -159,7 +159,8 @@ const OPT = {
   '部会生放送': { multi: ['生放送','PSH','部会','遅刻'], solo: ['欠席','未定'] }, // 生放送がある水曜（時間順）
   '生放送': { multi: [], solo: [] }, // 生放送だけの日は回答なし
   'イベント': { multi: [], solo: ['出席','欠席'] },
-  '準備':   { multi: ['1コマ','2コマ','3コマ','4コマ','5コマ','5コマ以降'], solo: ['来られない'] }
+  '準備':   { multi: ['1コマ','2コマ','3コマ','4コマ','5コマ','5コマ以降'], solo: ['来られない'] },
+  '準備生放送': { multi: ['生放送','1コマ','2コマ','3コマ','4コマ','5コマ','5コマ以降'], solo: ['来られない'] }
 };
 const NOT_COMING = ['欠席','来られない','未定'];
 const SHORT = {'生放送':'生','出席':'○','遅刻':'△','欠席':'×','未定':'?','PSH':'P','部会':'部',
@@ -172,7 +173,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 const parts = p => p ? p.split(',') : [];
 const optsOf = kind => OPT[kind] || OPT['部会'];
 // 生放送がある部会の日は専用の選択肢にする
-const kindKey = d => d.kind === '部会' && d.live ? '部会生放送' : d.kind;
+const kindKey = d => !d.live ? d.kind : d.kind === '部会' ? '部会生放送' : d.kind === '準備' ? '準備生放送' : d.kind;
 function fmt(k){ const [y,m,d] = k.split('-').map(Number); return m + '/' + d + '(' + W[new Date(y,m-1,d).getDay()] + ')'; }
 function addDays(k,n){ const [y,m,d] = k.split('-').map(Number); const t = new Date(y,m-1,d+n);
   return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'); }
