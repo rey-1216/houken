@@ -23,6 +23,7 @@
   }
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.6;padding-bottom:84px}
 header{background:var(--ink);color:var(--bg);padding:14px 16px 0}
 header h1{margin:0 0 10px;font-size:18px;font-weight:800;letter-spacing:.04em}
@@ -171,11 +172,21 @@ function addDays(k,n){ const [y,m,d] = k.split('-').map(Number); const t = new D
 // サーバー（Apps Script）とのやりとり
 const ARGS = { saveMine: ['name','map'], getAdmin: ['pw'], setActual: ['pw','date','name','actual'], setLineup: ['pw','date','items'] };
 const API = (typeof window.API_URL === 'string') ? window.API_URL : '';
+// 返事を読み取る。データ以外（エラーページなど）が返ってきたら中身の一部を見せる
+function readJson(r){
+  return r.text().then(t => {
+    try { return JSON.parse(t); }
+    catch(e){
+      const msg = t.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+      throw new Error('サーバーから想定外の返事（' + r.status + '）：' + msg);
+    }
+  });
+}
 function run(fn, ...args){
   const body = { action: fn };
   ARGS[fn].forEach((k, i) => body[k] = args[i]);
   return fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) })
-    .then(r => r.json())
+    .then(readJson)
     .then(j => { if (!j.ok) throw new Error(j.error); return j.data; });
 }
 function todayKey(){ const t = new Date(); return addDays(t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'), 0); }
@@ -232,7 +243,7 @@ function applyBoot(b){
   if (cached) applyBoot(cached);
   else $('myDays').innerHTML = '<p class="empty">読み込み中…</p>';
   if (API.indexOf('http') !== 0) { $('myDays').innerHTML = '<p class="empty">config.js にURLが入っていません。</p>'; return; }
-  fetch(API + '?action=boot').then(r => r.json()).then(j => {
+  fetch(API + '?action=boot').then(readJson).then(j => {
     if (!j.ok) throw new Error(j.error);
     applyBoot(j.data); saveBoot();
   }).catch(e => { if (!cached) $('myDays').innerHTML = '<p class="empty">読み込めませんでした：' + esc(e.message) + '</p>'; });
