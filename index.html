@@ -452,8 +452,9 @@ function signedIn(r){
   setToken(r.token);
   ['lgPass','pwNow','pwNew','pwNew2'].forEach(id => $(id).value = '');
   $('loginForm').hidden = true; $('pwForm').hidden = true; $('homeBody').hidden = false;
-  $('summary').innerHTML = '<p class="empty">読み込み中…</p>';
-  loadBoot();
+  // ログインの返事にデータが入っているので、すぐ表示する
+  if (r.boot) { applyBoot(r.boot); saveBoot(); syncPushUser(); }
+  else { $('summary').innerHTML = '<p class="empty">読み込み中…</p>'; loadBoot(); }
 }
 // パスワードの画面。first＝初回番号でログインした直後、そうでなければ変更
 let pwMode = null, pwSid = '', pwCode = '';
