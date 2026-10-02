@@ -203,7 +203,7 @@ td small{color:var(--sub);margin-left:3px}
     <div id="pushBox" class="sum push"></div>
     <div class="menu">
       <button data-go="me">出欠を回答<span id="meBadge"></span></button>
-      <button data-go="vtr">VTR・撮影<span id="vtrBadge"></span></button>
+      <button data-go="vtr">VTR<span id="vtrBadge"></span></button>
       <button data-go="work" hidden>仕事分担<span id="workBadge"></span></button>
       <button data-go="lineups">生放送の役職表</button>
       <button data-go="free">空きコマ<span id="freeBadge"></span></button>
@@ -392,7 +392,7 @@ function toggle(kind, cur, t){
 }
 
 // ---------- 画面の切り替え ----------
-const VIEWS = { home: '', me: '出欠を回答', vtr: 'VTR・撮影', work: '仕事分担', lineups: '生放送の役職表', free: '空きコマ', admin: '管理者' };
+const VIEWS = { home: '', me: '出欠を回答', vtr: 'VTR', work: '仕事分担', lineups: '生放送の役職表', free: '空きコマ', admin: '管理者' };
 let view = 'home';
 function show(){
   view = (location.hash || '#home').slice(1);
@@ -1392,7 +1392,7 @@ $('mBody').onclick = e => {
   }
 };
 
-// ---------- VTR・撮影（今までのVTR一覧のスプレッドシート） ----------
+// ---------- VTR（今までのVTR一覧のスプレッドシート） ----------
 let vtrTab = 'mine', vtrYearSel = '', vtrFilter = '';
 const vtrCache = {};
 function pn(v){ return String(v || '').replace(/[()（）\s\u3000]/g, ''); }
@@ -1414,7 +1414,7 @@ function vtrRoles(c){
   if (!ME) return [];
   const info = (BOOT && BOOT.info && BOOT.info[ME.name]) || {};
   const keys = [pn(ME.name), pn(info.short)].filter(x => x);
-  return [['編集者', '編集'], ['補佐', '補佐'], ['撮影者', '撮影']].filter(([h]) =>
+  return [['編集者', '編集'], ['補佐', '補佐'], ['撮影者', '撮影'], ['アポ取り', 'アポ取り']].filter(([h]) =>
     String(c[h] || '').split(/[、,，・&＆\/／]|or/).some(x => keys.includes(pn(x)))).map(x => x[1]);
 }
 function vtrNow(){ return vtrYearSel && vtrCache[vtrYearSel] ? vtrCache[vtrYearSel] : (BOOT && BOOT.vtr); }
@@ -1431,7 +1431,7 @@ function myVtrs(){
 }
 const canEditVtr = c => ME && (ME.level >= 1 || vtrRoles(c).length > 0);
 
-const VTR_SHOWN = ['特集タイトル','状態','V尺','編集者','補佐','締め切り','生放送','CATV','撮影日','時間','撮影者','外付け'];
+const VTR_SHOWN = ['特集タイトル','状態','V尺','編集者','補佐','締め切り','生放送','CATV','撮影日','時間','撮影者','アポ取り','外付け'];
 function vtrCard(r, year){
   const c = r.c, roles = vtrRoles(c), done = vtrDone(c);
   const v = { row: r, due: jDate(c['締め切り'], year) }, dc = vtrDueCls(v);
@@ -1443,7 +1443,7 @@ function vtrCard(r, year){
     (roles.length ? '<span class="tag" style="border-color:var(--event);color:var(--event)">あなた：' + roles.join('・') + '</span>' : '') + '</div>' +
     '<div class="hint">' + join([line('尺', c['V尺']), line('編集', c['編集者']), line('補佐', c['補佐'])]) + '</div>' +
     '<div class="hint">' + join([line('締め切り', c['締め切り'], dc), line('生放送', c['生放送']), line('CATV', c['CATV'])]) + '</div>' +
-    ((c['撮影日'] || c['撮影者']) ? '<div class="hint">' + join([line('撮影', [c['撮影日'], c['時間']].filter(x => x).join(' ')), line('撮影者', c['撮影者'])]) + '</div>' : '') +
+    ((c['撮影日'] || c['撮影者'] || c['アポ取り']) ? '<div class="hint">' + join([line('撮影', [c['撮影日'], c['時間']].filter(x => x).join(' ')), line('撮影者', c['撮影者']), line('アポ取り', c['アポ取り'])]) + '</div>' : '') +
     ((c['外付け'] || extra.length) ? '<div class="hint">' + join([line('外付け', c['外付け'])].concat(extra)) + '</div>' : '') +
     (canEditVtr(c) ? '<div style="text-align:right"><button class="link" data-vedit="' + r.r + '">編集</button></div>' : '') + '</div>';
 }
@@ -1463,7 +1463,7 @@ function renderVtr(){
     const open = myVtrs().map(v => v.row), done = all.filter(r => vtrDone(r.c));
     box.innerHTML = (open.length ? open.map(r => vtrCard(r, latest.year)).join('') : '<p class="empty">今担当しているVTRはありません。</p>') +
       (done.length ? '<details class="mybox"><summary>書き出しが終わったVTR ' + done.length + '件</summary>' + done.map(r => vtrCard(r, latest.year)).join('') + '</details>' : '') +
-      '<p class="hint">' + esc(latest.year) + 'のシートで、編集者・補佐・撮影者に自分の表示名が入っているものです。</p>';
+      '<p class="hint">' + esc(latest.year) + 'のシートで、編集者・補佐・撮影者・アポ取りに自分の表示名が入っているものです。</p>';
     return;
   }
   if (vtrTab === 'shoot') {
@@ -1553,7 +1553,7 @@ $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrol
 
 // ---------- バージョンと更新のお知らせ ----------
 // 更新するたびに、この番号を上げる
-const APP_VERSION = '1.4';
+const APP_VERSION = '1.5';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
