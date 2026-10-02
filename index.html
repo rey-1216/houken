@@ -221,6 +221,10 @@ td small{color:var(--sub);margin-left:3px}
 
   <section id="vtr" hidden>
     <div class="chips tabs" id="vtrTabs"><button data-vt="mine">自分の担当</button><button data-vt="shoot">撮影予定</button><button data-vt="list">VTR一覧</button></div>
+    <div id="vtrSearch" hidden>
+      <input id="vtrQ" type="search" placeholder="タイトル・名前・日付などで検索" autocomplete="off">
+      <label class="hint" style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="vtrAllYears" style="width:auto;margin:0">すべての年から探す</label>
+    </div>
     <div id="vtrBody"></div>
   </section>
 
@@ -1432,20 +1436,20 @@ function myVtrs(){
 const canEditVtr = c => ME && (ME.level >= 1 || vtrRoles(c).length > 0);
 
 const VTR_SHOWN = ['特集タイトル','状態','V尺','編集者','補佐','締め切り','生放送','CATV','撮影日','時間','撮影者','アポ取り','アポ状況','外付け'];
-function vtrCard(r, year){
+function vtrCard(r, year, showYear){
   const c = r.c, roles = vtrRoles(c), done = vtrDone(c);
   const v = { row: r, due: jDate(c['締め切り'], year) }, dc = vtrDueCls(v);
   const line = (label, val, cls) => val ? label + '：' + (cls ? '<span class="due ' + cls + '">' + esc(val) + '</span>' : esc(val)) : '';
   const join = arr => arr.filter(x => x).join('　');
   const extra = Object.keys(c).filter(h => !VTR_SHOWN.includes(h) && c[h]).map(h => line(h, c[h]));
-  return '<div class="task"><div class="t1"><span class="ttl">' + esc(c['特集タイトル']) + '</span>' +
+  return '<div class="task"><div class="t1">' + (showYear ? '<span class="tag">' + esc(year) + '</span>' : '') + '<span class="ttl">' + esc(c['特集タイトル']) + '</span>' +
     (c['状態'] ? '<span class="st ' + (done ? 's-完了' : /編集中/.test(c['状態']) ? 's-進行中' : '') + '">' + esc(c['状態']) + '</span>' : '') +
     (roles.length ? '<span class="tag" style="border-color:var(--event);color:var(--event)">あなた：' + roles.join('・') + '</span>' : '') + '</div>' +
     '<div class="hint">' + join([line('尺', c['V尺']), line('編集', c['編集者']), line('補佐', c['補佐'])]) + '</div>' +
     '<div class="hint">' + join([line('締め切り', c['締め切り'], dc), line('生放送', c['生放送']), line('CATV', c['CATV'])]) + '</div>' +
     ((c['撮影日'] || c['撮影者'] || c['アポ取り'] || c['アポ状況']) ? '<div class="hint">' + join([line('撮影', [c['撮影日'], c['時間']].filter(x => x).join(' ')), line('撮影者', c['撮影者']), line('アポ取り', c['アポ取り']) + aponHtml(c['アポ状況'])]) + '</div>' : '') +
     ((c['外付け'] || extra.length) ? '<div class="hint">' + join([line('外付け', c['外付け'])].concat(extra)) + '</div>' : '') +
-    (canEditVtr(c) ? '<div style="text-align:right"><button class="link" data-vedit="' + r.r + '">編集</button></div>' : '') + '</div>';
+    (canEditVtr(c) ? '<div style="text-align:right"><button class="link" data-vedit="' + r.r + '" data-vyear="' + esc(year) + '">編集</button></div>' : '') + '</div>';
 }
 
 // アポ状況のしるし（済・完了・取れた・OK なら緑）
@@ -1458,6 +1462,7 @@ function aponHtml(v){
 function renderVtr(){
   if (!BOOT || !ME) return;
   document.querySelectorAll('#vtrTabs button').forEach(b => b.classList.toggle('on', b.dataset.vt === vtrTab));
+  $('vtrSearch').hidden = vtrTab !== 'list' || !BOOT.vtr;
   const box = $('vtrBody');
   if (!BOOT.vtr) {
     box.innerHTML = '<p class="empty">' + (BOOT.vtrError ? 'VTR一覧を読み込めませんでした：' + esc(BOOT.vtrError) :
@@ -1485,6 +1490,8 @@ function renderVtr(){
     return;
   }
   // VTR一覧
+  const q = nz($('vtrQ').value);
+  if (q && $('vtrAllYears').checked) { box.innerHTML = searchAllYears(q); return; }
   if (!vtrYearSel) vtrYearSel = latest.year;
   const data = vtrNow();
   const years = BOOT.vtrYears || [latest.year];
@@ -1493,10 +1500,40 @@ function renderVtr(){
   html += '<div class="chips sub"><button data-vf=""' + (!vtrFilter ? ' class="on"' : '') + '>すべて</button>' +
     data.statuses.map(st => '<button data-vf="' + esc(st) + '"' + (vtrFilter === st ? ' class="on"' : '') + '>' + esc(st) + '</button>').join('') + '</div>';
   if (ME.level >= 1) html += '<div class="actions"><button class="btn ghost" id="vAdd">＋ VTRを追加</button></div>';
-  const rows = data.rows.filter(r => !vtrFilter || r.c['状態'] === vtrFilter).slice().reverse();
+  const rows = data.rows.filter(r => (!vtrFilter || r.c['状態'] === vtrFilter) && (!q || hit(r, q))).slice().reverse();
+  if (q) html += '<p class="hint">' + rows.length + '件見つかりました</p>';
   html += rows.length ? rows.map(r => vtrCard(r, data.year)).join('') : '<p class="empty">該当するVTRはありません。</p>';
   box.innerHTML = html;
 }
+
+// 検索用に文字をそろえる（全角英数→半角、空白・カッコを無視、小文字）
+function nz(v){
+  return String(v || '').replace(/[Ａ-Ｚａ-ｚ０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+    .replace(/[\s\u3000()（）]/g, '').toLowerCase();
+}
+function hit(r, q){ return Object.keys(r.c).some(h => nz(r.c[h]).includes(q)); }
+// すべての年から探す（まだ読んでいない年は読み込む）
+let loadingYears = false;
+function searchAllYears(q){
+  const years = BOOT.vtrYears || [BOOT.vtr.year];
+  const dataOf = y => (BOOT.vtr.year === y ? BOOT.vtr : vtrCache[y]);
+  const missing = years.filter(y => !dataOf(y));
+  if (missing.length) {
+    if (!loadingYears) {
+      loadingYears = true;
+      Promise.all(missing.map(y => run('vtr', y).then(d => { vtrCache[d.year] = d; })))
+        .catch(err => toast('読み込めない年がありました：' + err.message))
+        .finally(() => { loadingYears = false; if (view === 'vtr') renderVtr(); });
+    }
+    return '<p class="empty">ほかの年のシートを読み込み中…</p>';
+  }
+  const found = [];
+  years.forEach(y => dataOf(y).rows.slice().reverse().forEach(r => { if (hit(r, q)) found.push(vtrCard(r, y, true)); }));
+  return '<p class="hint">すべての年から ' + found.length + '件見つかりました</p>' +
+    (found.join('') || '<p class="empty">該当するVTRはありません。</p>');
+}
+$('vtrQ').addEventListener('input', () => renderVtr());
+$('vtrAllYears').addEventListener('change', () => renderVtr());
 
 function vtrUpdate(d){
   vtrCache[d.year] = d;
@@ -1515,7 +1552,8 @@ $('vtr').onclick = e => {
   }
   if (b.dataset.vf !== undefined) { vtrFilter = b.dataset.vf; renderVtr(); return; }
   if (b.dataset.vedit) {
-    const d = vtrTab === 'list' ? vtrNow() : BOOT.vtr;
+    const y = b.dataset.vyear;
+    const d = (BOOT.vtr && BOOT.vtr.year === y) ? BOOT.vtr : (vtrCache[y] || vtrNow());
     const r = d.rows.find(x => String(x.r) === b.dataset.vedit);
     if (r) vtrForm(d, r);
     return;
@@ -1565,7 +1603,7 @@ $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrol
 
 // ---------- バージョンと更新のお知らせ ----------
 // 更新するたびに、この番号を上げる
-const APP_VERSION = '1.6';
+const APP_VERSION = '1.7';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
