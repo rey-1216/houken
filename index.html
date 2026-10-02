@@ -48,6 +48,13 @@ header .bar-in{display:flex;align-items:center;gap:10px;min-height:28px}
 .fgrid button{width:100%;height:44px;border-radius:8px;border:1px solid var(--line);background:var(--panel);font:inherit;font-weight:800;color:var(--sub);cursor:pointer}
 .fgrid button.on{background:var(--ok);border-color:var(--ok);color:#fff}
 .fgrid button.sel{outline:3px solid var(--pick);outline-offset:1px}
+.fcell{min-height:44px;border:1px solid var(--line);border-radius:8px;padding:3px;background:var(--panel)}
+.fgrid.names td{vertical-align:top}
+.fn{display:block;font-size:11.5px;font-weight:700;color:#fff;border-radius:5px;padding:2px 4px;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 0 2px rgba(0,0,0,.35)}
+.fn.me{outline:2px solid var(--ink);outline-offset:1px}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:13px;margin:6px 0}
+.legend span::before{content:"";display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-1px;background:var(--c)}
+.chips.sub button{font-size:12px;padding:4px 10px}
 .sum{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--pick);border-radius:10px;padding:10px 12px;font-size:14px}
 .sum.live{border-left-color:var(--live)}
 .sum b{display:block;font-size:12px;color:var(--sub);font-weight:700}
@@ -151,7 +158,9 @@ td small{color:var(--sub);margin-left:3px}
     <p class="hint">空いているコマをタップして、保存してください。学期が変わったら登録し直してください。</p>
     <div id="myFree"></div>
     <h2>みんなの空きコマ</h2>
-    <p class="hint">数字は空いている人数です。コマをタップすると名前が出ます。</p>
+    <div class="chips" id="freeModes"></div>
+    <div class="chips sub" id="freeSubs"></div>
+    <div id="freeLegend"></div>
     <div id="allFree"></div>
     <div id="freeNames"></div>
   </section>
@@ -702,16 +711,62 @@ function renderFree(){
       '<div class="actions"><button class="btn" id="freeSave"' + (changed ? '' : ' disabled') + '>空きコマを保存</button>' +
       (free[name] ? '' : '<span class="hint">まだ登録されていません</span>') + '</div>';
   }
-  const done = init.members.filter(n => free[n]);
-  const count = c => done.filter(n => free[n].includes(c)).length;
-  $('allFree').innerHTML = done.length ? gridHtml(c => {
-    const k = count(c), pct = Math.round(k / done.length * 70);
-    return '<button data-s="' + c + '" class="' + (c === freeSel ? 'sel' : '') + '" style="background:color-mix(in srgb, var(--ok) ' + pct + '%, var(--panel));' +
-      (pct > 40 ? 'color:#fff' : '') + '">' + k + '</button>';
-  }) : '<p class="empty">まだ誰も登録していません。</p>';
-  const yet = init.members.filter(n => !free[n]);
+  renderAllFree(name, free);
+}
+
+// ---------- みんなの空きコマ（4つの表示） ----------
+const GCOL = { '機材': '#2B6CD8', '美術': '#E07A1F', 'テロップ': '#1E9A5A' };
+const MODES = { count: '人数', all: '全員', group: '班別', grade: '学年別' };
+let freeMode = 'all', freeGroup = '', freeGrade = ''; // 最初は「全員」
+const infoOf = n => ((BOOT && BOOT.info) || {})[n] || { groups: [], grade: '' };
+function chipBg(n){
+  const cs = infoOf(n).groups.map(g => GCOL[g] || '#8A93A3');
+  if (!cs.length) return '#8A93A3';
+  if (cs.length === 1) return cs[0];
+  const w = 100 / cs.length;
+  return 'linear-gradient(90deg,' + cs.map((c, i) => c + ' ' + (i * w) + '% ' + ((i + 1) * w) + '%').join(',') + ')';
+}
+
+function renderAllFree(name, free){
+  const all = init.members, info = (BOOT && BOOT.info) || {};
+  const groups = Object.keys(GCOL).concat([...new Set(all.flatMap(n => infoOf(n).groups))].filter(g => !GCOL[g]));
+  const grades = [...new Set(all.map(n => infoOf(n).grade).filter(g => g))].sort();
+  $('freeModes').innerHTML = Object.keys(MODES).map(m => '<button data-m="' + m + '"' + (m === freeMode ? ' class="on"' : '') + '>' + MODES[m] + '</button>').join('');
+  let subs = [];
+  if (freeMode === 'group') { if (!groups.includes(freeGroup)) freeGroup = groups[0] || ''; subs = groups.map(g => [g, g + '班', g === freeGroup]); }
+  if (freeMode === 'grade') { if (!grades.includes(freeGrade)) freeGrade = grades[0] || ''; subs = grades.map(g => [g, g + '年', g === freeGrade]); }
+  $('freeSubs').innerHTML = subs.map(([v, l, on]) => '<button data-v="' + esc(v) + '"' + (on ? ' class="on"' : '') + '>' + esc(l) + '</button>').join('');
+  $('freeSubs').hidden = !subs.length;
+
+  // 対象の人
+  let pool = all;
+  if (freeMode === 'group') pool = all.filter(n => infoOf(n).groups.includes(freeGroup));
+  if (freeMode === 'grade') pool = all.filter(n => infoOf(n).grade === freeGrade);
+  const done = pool.filter(n => free[n]);
+  const yet = pool.filter(n => !free[n]);
+
+  $('freeLegend').innerHTML = freeMode === 'count'
+    ? '<p class="hint">数字は空いている人数です。コマをタップすると名前が出ます。</p>'
+    : '<div class="legend">' + Object.keys(GCOL).map(g => '<span style="--c:' + GCOL[g] + '">' + g + '</span>').join('') + '</div>' +
+      (Object.keys(info).length && all.every(n => !infoOf(n).groups.length) ? '<p class="hint">部員シートの「班」「学年」が入るとここに色が付きます。</p>' : '');
+
+  if (!done.length) {
+    $('allFree').innerHTML = '<p class="empty">' + (pool.length ? 'まだ誰も登録していません。' : '対象の人がいません。') + '</p>';
+  } else if (freeMode === 'count') {
+    const count = c => done.filter(n => free[n].includes(c)).length;
+    $('allFree').innerHTML = gridHtml(c => {
+      const k = count(c), pct = Math.round(k / done.length * 70);
+      return '<button data-s="' + c + '" class="' + (c === freeSel ? 'sel' : '') + '" style="background:color-mix(in srgb, var(--ok) ' + pct + '%, var(--panel));' +
+        (pct > 40 ? 'color:#fff' : '') + '">' + k + '</button>';
+    });
+  } else {
+    $('allFree').innerHTML = gridHtml(c => '<div class="fcell">' + done.filter(n => free[n].includes(c)).map(n =>
+      '<span class="fn' + (n === name ? ' me' : '') + '" style="background:' + chipBg(n) + '">' + esc(n) + '</span>').join('') + '</div>')
+      .replace('<table class="fgrid">', '<table class="fgrid names">');
+  }
+
   let html = '';
-  if (freeSel && done.length) {
+  if (freeMode === 'count' && freeSel && done.length) {
     const list = done.filter(n => free[n].includes(freeSel));
     html += '<b>' + freeSel.slice(0, 1) + '曜' + freeSel.slice(1) + 'コマが空いている人（' + list.length + '人）</b>' +
       '<div class="names">' + (list.map(n => '<span>' + (n === name ? '<mark>' + esc(n) + '</mark>' : esc(n)) + '</span>').join('') || '<span>いません</span>') + '</div>';
@@ -719,6 +774,13 @@ function renderFree(){
   if (yet.length) html += '<p class="hint">未登録：' + yet.length + '人（' + yet.map(esc).join('・') + '）</p>';
   $('freeNames').innerHTML = html;
 }
+
+$('freeModes').onclick = e => { const b = e.target.closest('button[data-m]'); if (!b) return; freeMode = b.dataset.m; renderFree(); };
+$('freeSubs').onclick = e => {
+  const b = e.target.closest('button[data-v]'); if (!b) return;
+  if (freeMode === 'group') freeGroup = b.dataset.v; else freeGrade = b.dataset.v;
+  renderFree();
+};
 
 $('myFree').onclick = e => {
   const b = e.target.closest('button'); if (!b) return;
