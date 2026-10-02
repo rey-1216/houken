@@ -68,6 +68,12 @@ header .bar-in{display:flex;align-items:center;gap:10px;min-height:28px}
 .sum.live{border-left-color:var(--live)}
 .sum.push{border-left-color:var(--event);margin:-8px 0 18px}
 .sum.push .btn{margin-top:6px}
+.asum{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:8px;margin:4px 0 14px}
+.acard{text-align:left;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--pick);border-radius:10px;padding:10px 12px;font:inherit;font-size:13px;color:var(--ink);cursor:pointer;line-height:1.5}
+.acard b{display:block;font-size:12px;color:var(--sub)}
+.acard .big{display:block;font-size:17px;font-weight:800;margin:2px 0}
+.acard.live{border-left-color:var(--live)} .acard.ev{border-left-color:var(--event)} .acard.alert{border-left-color:var(--late)}
+.chips.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0;margin-bottom:4px;border-bottom:1px solid var(--line)}
 .mybox{margin-top:28px;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:10px 12px}
 .mybox summary{font-weight:800;cursor:pointer;padding:4px 0}
 .ver{text-align:center;color:var(--sub);font-size:12px;padding:28px 0 8px}
@@ -179,7 +185,7 @@ td small{color:var(--sub);margin-left:3px}
       <button data-go="me">出欠を回答<span id="meBadge"></span></button>
       <button data-go="lineups">生放送の役職表</button>
       <button data-go="free">空きコマ<span id="freeBadge"></span></button>
-      <button data-go="admin" id="menuAdmin" hidden>役職者<small>役職・幹部のみ</small></button>
+      <button data-go="admin" id="menuAdmin" hidden>管理者<small>役職・幹部のみ</small></button>
     </div>
     </div>
   </section>
@@ -213,31 +219,46 @@ td small{color:var(--sub);margin-left:3px}
   <section id="admin" hidden>
     <p class="empty" id="adminLoading">読み込み中…</p>
     <div id="adminBody" hidden>
-      <h2>日付ごとの出欠</h2>
-      <div id="dateChips" class="chips"></div>
-      <div id="dayDetail"></div>
-      <h2>イベント準備期間</h2>
-      <div id="events"></div>
-      <h2 id="statsTitle">出席率と未回答</h2>
-      <p class="hint">未回答は今日から2週間分の数です。</p>
-      <div id="stats"></div>
-      <h2>生放送の役職</h2>
-      <div id="liveChips" class="chips"></div>
-      <div id="lineupEdit"></div>
-      <h2>空きコマの代理登録</h2>
-      <p class="hint">部員を選んで、その人の空きコマを登録・修正できます。</p>
-      <select id="proxyWho"></select>
-      <div id="proxyFree"></div>
-      <h2>通知</h2>
-      <p class="hint">ホーム画面に追加して、通知をオンにした人にだけ届きます。</p>
-      <div id="bcSec">
-      <input id="bcTitle" maxlength="50" placeholder="タイトル（例：明日の部会について）">
-      <textarea id="bcBody" rows="3" maxlength="300" placeholder="本文"></textarea>
-      <div class="actions"><button class="btn" id="bcSend">全員に送る</button></div>
+      <div id="adminSum" class="asum"></div>
+      <div id="adminTabs" class="chips tabs">
+        <button data-tab="att">出欠</button><button data-tab="event">イベント</button><button data-tab="live">生放送</button><button data-tab="notice">通知</button><button data-tab="other">その他</button>
       </div>
-      <div class="actions">
-        <button class="btn ghost" id="remAtt">出欠の未回答者にリマインド</button>
-        <button class="btn ghost" id="remFree">空きコマ未登録者にリマインド</button>
+      <div class="apane" data-pane="att">
+        <h2>日付ごとの出欠</h2>
+        <div id="dateChips" class="chips"></div>
+        <div id="dayDetail"></div>
+        <h2 id="statsTitle">出席率と未回答</h2>
+        <p class="hint">未回答は今日から2週間分の数です。</p>
+        <div id="stats"></div>
+      </div>
+      <div class="apane" data-pane="event" hidden>
+        <h2>イベント準備期間</h2>
+        <div id="events"></div>
+      </div>
+      <div class="apane" data-pane="live" hidden>
+        <h2>生放送の役職</h2>
+        <div id="liveChips" class="chips"></div>
+        <div id="lineupEdit"></div>
+      </div>
+      <div class="apane" data-pane="notice" hidden>
+        <h2>リマインド</h2>
+        <p class="hint">ホーム画面に追加して、通知をオンにした人にだけ届きます。</p>
+        <div class="actions">
+          <button class="btn ghost" id="remAtt">出欠の未回答者にリマインド</button>
+          <button class="btn ghost" id="remFree">空きコマ未登録者にリマインド</button>
+        </div>
+        <div id="bcSec">
+          <h2>全員へのお知らせ</h2>
+          <input id="bcTitle" maxlength="50" placeholder="タイトル（例：明日の部会について）">
+          <textarea id="bcBody" rows="3" maxlength="300" placeholder="本文"></textarea>
+          <div class="actions"><button class="btn" id="bcSend">全員に送る</button></div>
+        </div>
+      </div>
+      <div class="apane" data-pane="other" hidden>
+        <h2>空きコマの代理登録</h2>
+        <p class="hint">部員を選んで、その人の空きコマを登録・修正できます。</p>
+        <select id="proxyWho"></select>
+        <div id="proxyFree"></div>
       </div>
     </div>
   </section>
@@ -327,7 +348,7 @@ function toggle(kind, cur, t){
 }
 
 // ---------- 画面の切り替え ----------
-const VIEWS = { home: '', me: '出欠を回答', lineups: '生放送の役職表', free: '空きコマ', admin: '役職者' };
+const VIEWS = { home: '', me: '出欠を回答', lineups: '生放送の役職表', free: '空きコマ', admin: '管理者' };
 let view = 'home';
 function show(){
   view = (location.hash || '#home').slice(1);
@@ -601,7 +622,7 @@ $('saveBtn').onclick = () => {
     .finally(() => { b.disabled = false; b.textContent = '保存する'; });
 };
 
-// ---------- 役職者 ----------
+// ---------- 管理者 ----------
 function loadAdmin(){
   $('adminLoading').hidden = false; $('adminBody').hidden = true;
   run('getAdmin').then(d => {
@@ -621,6 +642,7 @@ function renderAdmin(){
   liveSel = next ? next.date : '';
   loadEdit(); renderLive();
   $('bcSec').hidden = admin.level < 2; // お知らせの送信は幹部だけ
+  renderAdminSum(); showTab(adminTab);
   $('proxyWho').innerHTML = '<option value="">部員を選ぶ</option>' + admin.members.map(n => '<option>' + esc(n) + '</option>').join('');
   proxyEdit = null; renderProxy();
 }
@@ -795,6 +817,7 @@ $('lineupEdit').onclick = e => {
     admin.lineups = admin.lineups.filter(r => r.date !== date)
       .concat(items.map(it => ({ date: date, role: it.role, slot: it.slot, name: it.name })));
     if (liveSel === date) { editDirty = false; renderLive(); }
+    renderAdminSum();
     if (BOOT) { BOOT.lineups = BOOT.lineups || {}; BOOT.lineups[date] = items.map(it => ({ date: date, role: it.role, slot: it.slot, name: it.name })); saveBoot(); }
     toast('役職表を保存しました');
   }).catch(err => { b.disabled = false; b.textContent = 'この回の役職表を保存'; toast('保存できませんでした：' + err.message); });
@@ -940,7 +963,7 @@ $('allFree').onclick = e => {
   renderFree();
 };
 
-// ---------- 空きコマの代理登録（役職者） ----------
+// ---------- 空きコマの代理登録（管理者） ----------
 let proxyEdit = null;
 function renderProxy(){
   const n = $('proxyWho').value, box = $('proxyFree');
@@ -1025,7 +1048,7 @@ $('pushBox').onclick = async e => {
   renderPush();
 };
 
-// 役職者：お知らせとリマインド
+// 管理者：お知らせとリマインド
 $('bcSend').onclick = () => {
   const title = $('bcTitle').value.trim(), body = $('bcBody').value.trim();
   if (!body) { toast('本文を入れてください'); return; }
@@ -1045,11 +1068,71 @@ $('bcSend').onclick = () => {
     .finally(() => { b.disabled = false; });
 });
 
+// ---------- 管理者：上のまとめとタブ ----------
+let adminTab = 'att';
+function showTab(t){
+  adminTab = t;
+  document.querySelectorAll('#adminTabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  document.querySelectorAll('.apane').forEach(p => p.hidden = p.dataset.pane !== t);
+}
+$('adminTabs').onclick = e => { const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab); };
+
+function renderAdminSum(){
+  if (!admin) return;
+  const today = admin.today, cards = [];
+  const COME = ['出席','遅刻','PSH','部会','生放送'];
+  // 次の活動日
+  const next = admin.days.find(d => d.date >= today && (d.kind === '部会' || d.kind === 'イベント'));
+  if (next) {
+    let come = 0, no = 0, none = 0;
+    admin.members.forEach(n => {
+      const p = parts(ans(next.date, n).plan);
+      if (!p.length) none++;
+      else if (p.some(t => COME.includes(t))) come++;
+      else if (p.includes('欠席')) no++;
+    });
+    cards.push('<button class="acard' + (none ? ' alert' : '') + '" data-to="att" data-date="' + next.date + '"><b>次の' + next.kind + '　' + fmt(next.date) + '</b>' +
+      '<span class="big">来る予定 ' + come + '人</span>欠席 ' + no + '・未回答 ' + none + '</button>');
+  }
+  // 次の生放送
+  const live = admin.days.find(d => d.live && d.date >= today);
+  if (live) {
+    const rows = admin.lineups.filter(r => r.date === live.date && r.slot === '担当');
+    const basic = admin.roles.filter(r => !r.optional);
+    const empty = basic.filter(r => !rows.some(x => x.role === r.abbr)).map(r => r.abbr);
+    cards.push('<button class="acard live" data-to="live" data-live="' + live.date + '"><b>次の生放送　' + fmt(live.date) + '</b>' +
+      '<span class="big">役職 ' + (basic.length - empty.length) + '/' + basic.length + '</span>' +
+      (empty.length ? '未定：' + esc(empty.slice(0, 5).join('・')) + (empty.length > 5 ? ' ほか' : '') : 'すべて決まっています') + '</button>');
+  }
+  // 次のイベント
+  const ev = admin.days.find(d => d.kind === 'イベント' && d.date >= today);
+  if (ev) {
+    const [y, m, d] = ev.date.split('-').map(Number), [ty, tm, td] = today.split('-').map(Number);
+    const left = Math.round((new Date(y, m - 1, d) - new Date(ty, tm - 1, td)) / 864e5);
+    cards.push('<button class="acard ev" data-to="event"><b>' + esc(ev.prepFor || 'イベント') + '</b><span class="big">あと ' + left + '日</span>' + fmt(ev.date) + ' 本番</button>');
+  }
+  // 未回答の人（2週間）
+  const unans = admin.stats.filter(x => x.unanswered > 0).length;
+  cards.push('<button class="acard' + (unans ? ' alert' : '') + '" data-to="att"><b>出欠の未回答（2週間）</b><span class="big">' + unans + '人</span>リマインドは「通知」タブから</button>');
+  // 空きコマ未登録
+  const fr = (BOOT && BOOT.free) || {};
+  const noFree = admin.members.filter(n => !fr[n]).length;
+  cards.push('<button class="acard' + (noFree ? ' alert' : '') + '" data-to="notice"><b>空きコマ未登録</b><span class="big">' + noFree + '人</span>' + admin.members.length + '人中</button>');
+  $('adminSum').innerHTML = cards.join('');
+}
+$('adminSum').onclick = e => {
+  const c = e.target.closest('[data-to]'); if (!c) return;
+  if (c.dataset.date) { selDate = c.dataset.date; renderChips(); renderDay(); }
+  if (c.dataset.live) { liveSel = c.dataset.live; loadEdit(); renderLive(); }
+  showTab(c.dataset.to);
+  $('adminTabs').scrollIntoView({ behavior: 'smooth' });
+};
+
 $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrollIntoView({ behavior: 'smooth' }); };
 
 // ---------- バージョンと更新のお知らせ ----------
 // 更新するたびに、この番号を上げる
-const APP_VERSION = '1.0';
+const APP_VERSION = '1.1';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
