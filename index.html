@@ -68,6 +68,11 @@ header .bar-in{display:flex;align-items:center;gap:10px;min-height:28px}
 .sum.live{border-left-color:var(--live)}
 .sum.push{border-left-color:var(--event);margin:-8px 0 18px}
 .sum.push .btn{margin-top:6px}
+.mybox{margin-top:28px;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:10px 12px}
+.mybox summary{font-weight:800;cursor:pointer;padding:4px 0}
+.ver{text-align:center;color:var(--sub);font-size:12px;padding:28px 0 8px}
+#updBar{position:fixed;left:12px;right:12px;top:calc(env(safe-area-inset-top, 0px) + 10px);z-index:20;background:var(--event);color:#fff;border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:14px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+#updBar button{border:0;border-radius:8px;background:#fff;color:var(--event);font:inherit;font-weight:800;padding:6px 14px;cursor:pointer}
 .userbar{display:flex;justify-content:space-between;align-items:center;margin:0 0 12px;font-size:14px}
 .link{border:0;background:none;color:var(--pick);font:inherit;font-size:13px;cursor:pointer;text-decoration:underline;padding:4px}
 .sum b{display:block;font-size:12px;color:var(--sub);font-weight:700}
@@ -187,15 +192,17 @@ td small{color:var(--sub);margin-left:3px}
   </section>
 
   <section id="free" hidden>
-    <h2 style="margin-top:4px">自分の空きコマ</h2>
-    <p class="hint">空いているコマをタップして、保存してください。学期が変わったら登録し直してください。</p>
-    <div id="myFree"></div>
-    <h2>みんなの空きコマ</h2>
+    <div class="userbar"><h2 style="margin:4px 0 0">みんなの空きコマ</h2><button class="link" id="toMyFree">自分の登録はこちら ↓</button></div>
     <div class="chips" id="freeModes"></div>
     <div class="chips sub" id="freeSubs"></div>
     <div id="freeLegend"></div>
     <div id="allFree"></div>
     <div id="freeNames"></div>
+    <details id="myFreeBox" class="mybox">
+      <summary>自分の空きコマを登録・修正する</summary>
+      <p class="hint">空いているコマをタップして、保存してください。学期が変わったら登録し直してください。</p>
+      <div id="myFree"></div>
+    </details>
   </section>
 
   <section id="me" hidden>
@@ -234,7 +241,9 @@ td small{color:var(--sub);margin-left:3px}
       </div>
     </div>
   </section>
+  <p class="ver" id="ver"></p>
 </main>
+<div id="updBar" hidden><span id="updMsg"></span><button id="updBtn">更新</button></div>
 
 <div id="bar" hidden>
   <span id="barMsg"></span>
@@ -331,7 +340,11 @@ function show(){
   document.body.classList.toggle('wide', view === 'free');
   if (view === 'home') renderHome();
   if (view === 'lineups') renderLineups();
-  if (view === 'free') { myFreeEdit = null; renderFree(); }
+  if (view === 'free') {
+    myFreeEdit = null; renderFree();
+    // まだ登録していない人は、自分の登録欄を開いておく
+    $('myFreeBox').open = !!(ME && !freeAll()[ME.name]);
+  }
   if (view === 'me') renderMine();
   if (view === 'admin') loadAdmin();
   if (view === 'lineups') renderExp();
@@ -1031,6 +1044,33 @@ $('bcSend').onclick = () => {
     .catch(err => toast('送れませんでした：' + err.message))
     .finally(() => { b.disabled = false; });
 });
+
+$('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrollIntoView({ behavior: 'smooth' }); };
+
+// ---------- バージョンと更新のお知らせ ----------
+// 更新するたびに、この番号を上げる
+const APP_VERSION = '1.0';
+$('ver').textContent = '放研ポータル v' + APP_VERSION;
+let newVersion = '';
+function checkUpdate(){
+  // GitHubに置いてある最新の index.html を、キャッシュを使わずに読んで番号を比べる
+  fetch('index.html?check=' + Date.now(), { cache: 'no-store' })
+    .then(r => r.ok ? r.text() : '')
+    .then(t => {
+      const m = t.match(/const APP_VERSION = '([^']+)'/);
+      if (!m || m[1] === APP_VERSION) return;
+      newVersion = m[1];
+      $('updMsg').textContent = '新しいバージョン（v' + newVersion + '）があります';
+      $('updBar').hidden = false;
+    }).catch(() => {});
+}
+$('updBtn').onclick = () => {
+  // 古い画面を使わないよう、URLを変えて開き直す
+  location.replace(location.pathname + '?v=' + encodeURIComponent(newVersion) + location.hash);
+};
+checkUpdate();
+// アプリに戻ってきたときにも確認する
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 
 show();
 </script>
