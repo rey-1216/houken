@@ -68,6 +68,8 @@ header .bar-in{display:flex;align-items:center;gap:10px;min-height:28px}
 .sum.live{border-left-color:var(--live)}
 .sum.push{border-left-color:var(--event);margin:-8px 0 18px}
 .sum.push .btn{margin-top:6px}
+.userbar{display:flex;justify-content:space-between;align-items:center;margin:0 0 12px;font-size:14px}
+.link{border:0;background:none;color:var(--pick);font:inherit;font-size:13px;cursor:pointer;text-decoration:underline;padding:4px}
 .sum b{display:block;font-size:12px;color:var(--sub);font-weight:700}
 main{max-width:640px;margin:0 auto;padding:16px}
 h2{font-size:16px;margin:28px 0 10px}
@@ -148,21 +150,40 @@ td small{color:var(--sub);margin-left:3px}
 
 <main>
   <section id="home">
-    <label class="who">自分の名前
-      <select id="who"><option value="">読み込み中…</option></select>
-    </label>
+    <div id="loginForm" hidden>
+      <h2 style="margin-top:4px">ログイン</h2>
+      <p class="hint">初めての人は、パスワードの欄に部長から届いた「初回番号」を入れてください。一度ログインすれば、この端末では次から自動で入れます。</p>
+      <label class="who">学籍番号<input id="lgSid" autocomplete="username" autocapitalize="characters" spellcheck="false"></label>
+      <label class="who">パスワード<input id="lgPass" type="password" autocomplete="current-password" maxlength="64"></label>
+      <button class="btn" id="lgBtn">ログイン</button>
+    </div>
+    <div id="pwForm" hidden>
+      <h2 style="margin-top:4px" id="pwTitle">パスワードを決める</h2>
+      <p class="hint" id="pwHint">次からはこのパスワードでログインします。6文字以上で、他の人に推測されにくいものにしてください。</p>
+      <label class="who" id="pwNowWrap">今のパスワード<input id="pwNow" type="password" autocomplete="current-password" maxlength="64"></label>
+      <label class="who">新しいパスワード<input id="pwNew" type="password" autocomplete="new-password" maxlength="64"></label>
+      <label class="who">もう一度<input id="pwNew2" type="password" autocomplete="new-password" maxlength="64"></label>
+      <div class="actions"><button class="btn" id="pwBtn">決定</button><button class="btn ghost" id="pwCancel">戻る</button></div>
+    </div>
+    <div id="homeBody" hidden>
+    <div class="userbar"><span><b id="meName"></b> さん</span><span><button class="link" id="pwChange">パスワード変更</button><button class="link" id="logoutBtn">ログアウト</button></span></div>
+    <select id="who" hidden></select>
     <div id="summary" class="summary"></div>
     <div id="pushBox" class="sum push"></div>
     <div class="menu">
       <button data-go="me">出欠を回答<span id="meBadge"></span></button>
       <button data-go="lineups">生放送の役職表</button>
       <button data-go="free">空きコマ<span id="freeBadge"></span></button>
-      <button data-go="admin">役職者<small>パスワードが必要です</small></button>
+      <button data-go="admin" id="menuAdmin" hidden>役職者<small>役職・幹部のみ</small></button>
+    </div>
     </div>
   </section>
 
   <section id="lineups" hidden>
     <div id="lineupList"></div>
+    <h2>役職の経験</h2>
+    <p class="hint">数字は担当した回数です。補佐は「補」として別に表示し、経験の回数には入れていません。</p>
+    <div id="exp"></div>
   </section>
 
   <section id="free" hidden>
@@ -183,36 +204,30 @@ td small{color:var(--sub);margin-left:3px}
   </section>
 
   <section id="admin" hidden>
-    <div id="login">
-      <label class="who">管理パスワード
-        <input type="password" id="pw" autocomplete="current-password">
-      </label>
-      <button class="btn" id="loginBtn">開く</button>
-    </div>
+    <p class="empty" id="adminLoading">読み込み中…</p>
     <div id="adminBody" hidden>
       <h2>日付ごとの出欠</h2>
       <div id="dateChips" class="chips"></div>
       <div id="dayDetail"></div>
       <h2>イベント準備期間</h2>
       <div id="events"></div>
-      <h2>出席率と未回答</h2>
+      <h2 id="statsTitle">出席率と未回答</h2>
       <p class="hint">未回答は今日から2週間分の数です。</p>
       <div id="stats"></div>
       <h2>生放送の役職</h2>
       <div id="liveChips" class="chips"></div>
       <div id="lineupEdit"></div>
-      <h2>役職の経験</h2>
-      <p class="hint">数字は担当した回数です。補佐は「補」として別に表示し、経験の回数には入れていません。出席率は、生放送で役職か補佐に入った回の割合です。</p>
-      <div id="exp"></div>
       <h2>空きコマの代理登録</h2>
       <p class="hint">部員を選んで、その人の空きコマを登録・修正できます。</p>
       <select id="proxyWho"></select>
       <div id="proxyFree"></div>
       <h2>通知</h2>
       <p class="hint">ホーム画面に追加して、通知をオンにした人にだけ届きます。</p>
+      <div id="bcSec">
       <input id="bcTitle" maxlength="50" placeholder="タイトル（例：明日の部会について）">
       <textarea id="bcBody" rows="3" maxlength="300" placeholder="本文"></textarea>
       <div class="actions"><button class="btn" id="bcSend">全員に送る</button></div>
+      </div>
       <div class="actions">
         <button class="btn ghost" id="remAtt">出欠の未回答者にリマインド</button>
         <button class="btn ghost" id="remFree">空きコマ未登録者にリマインド</button>
@@ -244,7 +259,6 @@ const SHORT = {'生放送':'生','出席':'○','遅刻':'△','欠席':'×','�
 const W = '日月火水木金土';
 // 通知まわり（先に宣言しておく）
 const ONESIGNAL_APP_ID = '5353a1f5-1881-4d62-9322-325728da0214';
-const pushId = n => 'm_' + encodeURIComponent(n); // Apps Script側と同じ形
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
 let OS = null, osFailed = false;
@@ -260,7 +274,12 @@ function fmt(k){ const [y,m,d] = k.split('-').map(Number); return m + '/' + d + 
 function addDays(k,n){ const [y,m,d] = k.split('-').map(Number); const t = new Date(y,m-1,d+n);
   return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'); }
 // サーバー（Apps Script）とのやりとり
-const ARGS = { saveMine: ['name','map','notes'], saveFree: ['name','slots'], getAdmin: ['pw'], setActual: ['pw','date','name','actual'], setLineup: ['pw','date','items'], broadcast: ['pw','title','body'], remindNow: ['pw','kind'] };
+const ARGS = { login: ['sid','pass'], setPassword: ['sid','current','next'], boot: [], saveMine: ['name','map','notes'], saveFree: ['name','slots'], getAdmin: [],
+  setActual: ['date','name','actual'], setLineup: ['date','items'], broadcast: ['title','body'], remindNow: ['kind'] };
+// ログイン情報（この端末に保存）
+let TOKEN = (() => { try { return localStorage.getItem('token') || ''; } catch(e){ return ''; } })();
+let ME = null;
+function setToken(t){ TOKEN = t; try { t ? localStorage.setItem('token', t) : localStorage.removeItem('token'); } catch(e){} }
 const API = (typeof window.API_URL === 'string') ? window.API_URL : '';
 // 返事を読み取る。データ以外（エラーページなど）が返ってきたら中身の一部を見せる
 function readJson(r){
@@ -273,11 +292,15 @@ function readJson(r){
   });
 }
 function run(fn, ...args){
-  const body = { action: fn };
+  const body = { action: fn, token: TOKEN };
   ARGS[fn].forEach((k, i) => body[k] = args[i]);
   return fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) })
     .then(readJson)
-    .then(j => { if (!j.ok) throw new Error(j.error); return j.data; });
+    .then(j => {
+      if (!j.ok && j.error === 'LOGIN') { loggedOut(); throw new Error('もう一度ログインしてください'); }
+      if (!j.ok) throw new Error(j.error);
+      return j.data;
+    });
 }
 function todayKey(){ const t = new Date(); return addDays(t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'), 0); }
 function toast(t){ const el = $('toast'); el.textContent = t; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 1800); }
@@ -300,6 +323,7 @@ let view = 'home';
 function show(){
   view = (location.hash || '#home').slice(1);
   if (!(view in VIEWS)) view = 'home';
+  if (view !== 'home' && (!TOKEN || (view === 'admin' && (!ME || ME.level < 1)))) { location.hash = '#home'; return; }
   Object.keys(VIEWS).forEach(v => $(v).hidden = v !== view);
   $('back').hidden = view === 'home';
   $('brand').hidden = view !== 'home';
@@ -309,6 +333,8 @@ function show(){
   if (view === 'lineups') renderLineups();
   if (view === 'free') { myFreeEdit = null; renderFree(); }
   if (view === 'me') renderMine();
+  if (view === 'admin') loadAdmin();
+  if (view === 'lineups') renderExp();
   updateBar();
   window.scrollTo(0, 0);
 }
@@ -323,7 +349,7 @@ function renderHome(){
   renderPush();
   const name = $('who').value, box = $('summary');
   $('meBadge').innerHTML = ''; $('freeBadge').innerHTML = '';
-  if (!init || !name) { box.innerHTML = init ? '<p class="hint">名前を選ぶと、次の予定と自分の役職が表示されます。</p>' : ''; return; }
+  if (!init || !name) { box.innerHTML = init ? '' : ''; return; }
   const ask = init.days.filter(d => d.kind !== '生放送');
   const next = ask[0];
   let html = '';
@@ -381,28 +407,89 @@ function notesOf(name){
 }
 function applyBoot(b){
   const today = todayKey();
-  BOOT = b;
+  BOOT = b; ME = b.me;
   init = { today: today, members: b.members, days: b.days.filter(d => d.date >= today) };
-  const cur = $('who').value || getSaved();
-  $('who').innerHTML = '<option value="">選んでください</option>' +
-    b.members.map(n => '<option>' + esc(n) + '</option>').join('');
-  if (cur && b.members.includes(cur)) $('who').value = cur;
+  // 名前はログインした本人で固定
+  $('who').innerHTML = '<option>' + esc(ME.name) + '</option>';
+  $('who').value = ME.name;
+  $('meName').textContent = ME.name;
+  $('menuAdmin').hidden = ME.level < 1;
+  $('loginForm').hidden = true; $('pwForm').hidden = true; $('homeBody').hidden = false;
   mine = mineOf($('who').value); myNotes = notesOf($('who').value);
   Object.keys(dirty).forEach(k => { if (dirty[k] === (mine[k] || '')) delete dirty[k]; });
   Object.keys(dirtyNote).forEach(k => { if (dirtyNote[k] === (myNotes[k] || '')) delete dirtyNote[k]; });
-  updateBar(); renderMine(); renderHome(); if (view === 'lineups') renderLineups(); if (view === 'free') renderFree();
+  updateBar(); renderMine(); renderHome(); if (view === 'lineups') { renderLineups(); renderExp(); } if (view === 'free') renderFree();
+}
+function loadBoot(){
+  if (API.indexOf('http') !== 0) { $('summary').innerHTML = '<p class="empty">config.js にURLが入っていません。</p>'; return; }
+  run('boot').then(d => { applyBoot(d); saveBoot(); syncPushUser(); })
+    .catch(e => { if (TOKEN) toast('読み込めませんでした：' + e.message); });
+}
+function showLogin(){
+  $('loginForm').hidden = false; $('pwForm').hidden = true; $('homeBody').hidden = true;
+  if (location.hash && location.hash !== '#home') location.hash = '#home';
+  renderPush();
+}
+// ログイン情報が無効になったとき
+function loggedOut(){
+  setToken(''); ME = null; BOOT = null; init = null; admin = null;
+  try { localStorage.removeItem('boot'); } catch(e){}
+  if (OS) { try { OS.logout(); } catch(e){} }
+  showLogin();
 }
 (() => {
+  if (!TOKEN) { showLogin(); return; }
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem('boot') || 'null'); } catch(e){}
-  if (cached) applyBoot(cached);
-  else $('myDays').innerHTML = '<p class="empty">読み込み中…</p>';
-  if (API.indexOf('http') !== 0) { $('myDays').innerHTML = '<p class="empty">config.js にURLが入っていません。</p>'; return; }
-  fetch(API + '?action=boot').then(readJson).then(j => {
-    if (!j.ok) throw new Error(j.error);
-    applyBoot(j.data); saveBoot();
-  }).catch(e => { if (!cached) $('myDays').innerHTML = '<p class="empty">読み込めませんでした：' + esc(e.message) + '</p>'; });
+  if (cached && cached.me) applyBoot(cached);
+  else $('summary').innerHTML = '<p class="empty">読み込み中…</p>';
+  $('homeBody').hidden = false;
+  loadBoot();
 })();
+
+// ログイン成功後
+function signedIn(r){
+  setToken(r.token);
+  ['lgPass','pwNow','pwNew','pwNew2'].forEach(id => $(id).value = '');
+  $('loginForm').hidden = true; $('pwForm').hidden = true; $('homeBody').hidden = false;
+  $('summary').innerHTML = '<p class="empty">読み込み中…</p>';
+  loadBoot();
+}
+// パスワードの画面。first＝初回番号でログインした直後、そうでなければ変更
+let pwMode = null, pwSid = '', pwCode = '';
+function showPwForm(first){
+  pwMode = first ? 'first' : 'change';
+  $('pwTitle').textContent = first ? 'パスワードを決める' : 'パスワードを変更';
+  $('pwNowWrap').hidden = first;
+  $('loginForm').hidden = true; $('homeBody').hidden = true; $('pwForm').hidden = false;
+}
+$('lgBtn').onclick = () => {
+  const sid = $('lgSid').value.trim(), pass = $('lgPass').value;
+  if (!sid || !pass) { toast('学籍番号とパスワードを入れてください'); return; }
+  const b = $('lgBtn'); b.disabled = true; b.textContent = '確認中…';
+  run('login', sid, pass).then(r => {
+    if (r.needPassword) { pwSid = sid; pwCode = pass; showPwForm(true); return; }
+    signedIn(r);
+  }).catch(e => toast(e.message)).finally(() => { b.disabled = false; b.textContent = 'ログイン'; });
+};
+$('lgPass').onkeydown = e => { if (e.key === 'Enter') $('lgBtn').click(); };
+$('pwChange').onclick = () => { pwSid = ME ? ME.sid : ''; pwCode = ''; showPwForm(false); };
+$('pwCancel').onclick = () => {
+  ['pwNow','pwNew','pwNew2'].forEach(id => $(id).value = '');
+  if (pwMode === 'first') showLogin(); else { $('pwForm').hidden = true; $('homeBody').hidden = false; }
+};
+$('pwBtn').onclick = () => {
+  const now = pwMode === 'first' ? pwCode : $('pwNow').value, n1 = $('pwNew').value, n2 = $('pwNew2').value;
+  if (n1.length < 6) { toast('パスワードは6文字以上にしてください'); return; }
+  if (n1 !== n2) { toast('2つのパスワードが一致しません'); return; }
+  if (!now) { toast('今のパスワードを入れてください'); return; }
+  const b = $('pwBtn'); b.disabled = true;
+  run('setPassword', pwSid, now, n1).then(r => {
+    toast(pwMode === 'first' ? 'パスワードを決めました' : 'パスワードを変更しました');
+    signedIn(r);
+  }).catch(e => toast(e.message)).finally(() => { b.disabled = false; });
+};
+$('logoutBtn').onclick = () => { if (confirm('ログアウトしますか？')) loggedOut(); };
 
 $('who').onchange = () => {
   if ((Object.keys(dirty).length || Object.keys(dirtyNote).length) && !confirm('保存していない変更があります。名前を切り替えますか？')) return;
@@ -501,17 +588,15 @@ $('saveBtn').onclick = () => {
 };
 
 // ---------- 役職者 ----------
-$('loginBtn').onclick = () => {
-  pw = $('pw').value;
-  $('loginBtn').textContent = '確認中…';
-  run('getAdmin', pw).then(d => {
-    admin = d; $('login').hidden = true; $('adminBody').hidden = false;
+function loadAdmin(){
+  $('adminLoading').hidden = false; $('adminBody').hidden = true;
+  run('getAdmin').then(d => {
+    admin = d; $('adminLoading').hidden = true; $('adminBody').hidden = false;
     const next = d.days.find(x => x.date >= d.today && (x.kind === '部会' || x.kind === 'イベント'));
     selDate = next ? next.date : '';
     renderAdmin();
-  }).catch(e => toast(e.message)).finally(() => $('loginBtn').textContent = '開く');
-};
-$('pw').onkeydown = e => { if (e.key === 'Enter') $('loginBtn').click(); };
+  }).catch(e => { $('adminLoading').textContent = '読み込めませんでした：' + e.message; });
+}
 
 const ans = (date, name) => admin.answers[date + '|' + name] || {plan:'', actual:''};
 
@@ -520,7 +605,8 @@ function renderAdmin(){
   const lives = admin.days.filter(d => d.live);
   const next = lives.find(d => d.date >= admin.today) || lives[lives.length - 1];
   liveSel = next ? next.date : '';
-  loadEdit(); renderLive(); renderExp();
+  loadEdit(); renderLive();
+  $('bcSec').hidden = admin.level < 2; // お知らせの送信は幹部だけ
   $('proxyWho').innerHTML = '<option value="">部員を選ぶ</option>' + admin.members.map(n => '<option>' + esc(n) + '</option>').join('');
   proxyEdit = null; renderProxy();
 }
@@ -587,7 +673,7 @@ $('dayDetail').onclick = e => {
   const val = before === b.dataset.s ? '' : b.dataset.s;
   admin.answers[date + '|' + name] = {plan: a.plan, actual: val};
   renderDay();
-  run('setActual', pw, date, name, val).catch(err => {
+  run('setActual', date, name, val).catch(err => {
     admin.answers[date + '|' + name] = {plan: a.plan, actual: before};
     if (selDate === date) renderDay();
     toast('記録できませんでした：' + err.message);
@@ -620,10 +706,12 @@ function renderEvents(){
 }
 
 function renderStats(){
+  const top = admin.level >= 2;
+  $('statsTitle').textContent = top ? '出席率と未回答' : '未回答';
   const rows = admin.stats.slice().sort((a, b) => b.unanswered - a.unanswered || (a.rate ?? 101) - (b.rate ?? 101));
-  $('stats').innerHTML = '<div class="scroll"><table style="width:100%"><tr><th>名前</th><th>出席率</th><th>未回答</th></tr>' +
-    rows.map(s => '<tr><td>' + esc(s.name) + '</td><td' + (s.rate !== null && s.rate < 50 ? ' class="warn"' : '') + '>' +
-      (s.rate === null ? '–' : s.rate + '%') + '</td><td' + (s.unanswered ? ' class="warn"' : '') + '>' + s.unanswered + '</td></tr>').join('') +
+  $('stats').innerHTML = '<div class="scroll"><table style="width:100%"><tr><th>名前</th>' + (top ? '<th>出席率</th>' : '') + '<th>未回答</th></tr>' +
+    rows.map(s => '<tr><td>' + esc(s.name) + '</td>' + (top ? '<td' + (s.rate !== null && s.rate < 50 ? ' class="warn"' : '') + '>' +
+      (s.rate === null ? '–' : s.rate + '%') + '</td>' : '') + '<td' + (s.unanswered ? ' class="warn"' : '') + '>' + s.unanswered + '</td></tr>').join('') +
     '</table></div>';
 }
 
@@ -689,34 +777,39 @@ $('lineupEdit').onclick = e => {
   });
   const b = e.target; b.disabled = true; b.textContent = '保存中…';
   const date = liveSel;
-  run('setLineup', pw, date, items).then(() => {
+  run('setLineup', date, items).then(() => {
     admin.lineups = admin.lineups.filter(r => r.date !== date)
       .concat(items.map(it => ({ date: date, role: it.role, slot: it.slot, name: it.name })));
     if (liveSel === date) { editDirty = false; renderLive(); }
-    renderExp(); toast('役職表を保存しました');
+    if (BOOT) { BOOT.lineups = BOOT.lineups || {}; BOOT.lineups[date] = items.map(it => ({ date: date, role: it.role, slot: it.slot, name: it.name })); saveBoot(); }
+    toast('役職表を保存しました');
   }).catch(err => { b.disabled = false; b.textContent = 'この回の役職表を保存'; toast('保存できませんでした：' + err.message); });
 };
 
 function renderExp(){
-  const past = new Set(admin.days.filter(d => d.live && d.date <= admin.today).map(d => d.date));
+  if (!BOOT || !ME) { $('exp').innerHTML = ''; return; }
+  const past = new Set(BOOT.pastLive || []);
   const cnt = {}, sub = {}, came = {};
-  admin.lineups.forEach(r => {
-    if (!past.has(r.date)) return;
-    const box = r.slot === '補佐' ? sub : cnt;
-    box[r.name + '|' + r.role] = (box[r.name + '|' + r.role] || 0) + 1;
-    (came[r.name] = came[r.name] || new Set()).add(r.date);
+  Object.keys(BOOT.lineups || {}).forEach(dt => {
+    if (!past.has(dt)) return;
+    BOOT.lineups[dt].forEach(r => {
+      const box = r.slot === '補佐' ? sub : cnt;
+      box[r.name + '|' + r.role] = (box[r.name + '|' + r.role] || 0) + 1;
+      (came[r.name] = came[r.name] || new Set()).add(dt);
+    });
   });
-  const roles = admin.roles;
-  let t = '<div class="scroll"><table><tr><th>名前</th><th>出席率</th>' + roles.map(r => '<th>' + esc(r.abbr) + '</th>').join('') + '</tr>';
-  admin.members.forEach(n => {
+  const roles = BOOT.roles || [], top = ME.level >= 2;
+  let t = '<div class="scroll"><table><tr><th>名前</th>' + (top ? '<th>出席率</th>' : '') + roles.map(r => '<th>' + esc(r.abbr) + '</th>').join('') + '</tr>';
+  BOOT.members.forEach(n => {
     const rate = past.size ? Math.round((came[n] ? came[n].size : 0) / past.size * 100) + '%' : '–';
-    t += '<tr><td>' + esc(n) + '</td><td>' + rate + '</td>' + roles.map(r => {
+    t += '<tr><td>' + (n === ME.name ? '<mark>' + esc(n) + '</mark>' : esc(n)) + '</td>' + (top ? '<td>' + rate + '</td>' : '') + roles.map(r => {
       const c = cnt[n + '|' + r.abbr] || 0, sb = sub[n + '|' + r.abbr] || 0;
       if (!c && !sb) return '<td class="none">–</td>';
       return '<td' + (c ? ' class="yes"' : '') + '>' + (c || '') + (sb ? '<small>補' + sb + '</small>' : '') + '</td>';
     }).join('') + '</tr>';
   });
-  $('exp').innerHTML = t + '</table></div>' + (past.size ? '' : '<p class="hint">まだ終わった生放送がありません。</p>');
+  $('exp').innerHTML = t + '</table></div>' + (past.size ? '' : '<p class="hint">まだ終わった生放送がありません。</p>') +
+    (top ? '<p class="hint">出席率は、終わった生放送のうち役職か補佐に入った回の割合です（幹部だけに表示）。</p>' : '');
 }
 // ---------- 空きコマ ----------
 const FD = ['月','火','水','木','金'], FK = [1,2,3,4,5];
@@ -883,8 +976,7 @@ OneSignalDeferred.push(async function(OneSignal){
 setTimeout(() => { if (!OS) { osFailed = true; renderPush(); } }, 10000);
 
 function syncPushUser(){
-  const n = $('who').value;
-  if (OS && n) { try { OS.login(pushId(n)); } catch(e){ console.warn(e); } }
+  if (OS && ME && ME.pushId) { try { OS.login(ME.pushId); } catch(e){ console.warn(e); } }
 }
 
 function renderPush(){
@@ -896,8 +988,8 @@ function renderPush(){
     html = '<b>通知</b>' + (osFailed ? 'この画面では通知を使えません。' : '準備中…');
   } else if (!OS.Notifications.isPushSupported()) {
     html = '<b>通知</b>この端末・ブラウザは通知に対応していません。';
-  } else if (!$('who').value) {
-    html = '<b>通知</b>上で自分の名前を選ぶと、通知をオンにできます。';
+  } else if (!ME) {
+    html = '<b>通知</b>ログインすると、通知をオンにできます。';
   } else if (OS.Notifications.permission && OS.User.PushSubscription.optedIn) {
     html = '<b>通知</b>オンになっています。';
   } else if (window.Notification && Notification.permission === 'denied') {
@@ -925,7 +1017,7 @@ $('bcSend').onclick = () => {
   if (!body) { toast('本文を入れてください'); return; }
   if (!confirm('通知をオンにしている全員に送ります。よろしいですか？')) return;
   const b = $('bcSend'); b.disabled = true; b.textContent = '送信中…';
-  run('broadcast', pw, title, body).then(() => {
+  run('broadcast', title, body).then(() => {
     $('bcTitle').value = ''; $('bcBody').value = ''; toast('送信しました');
   }).catch(err => toast('送れませんでした：' + err.message))
     .finally(() => { b.disabled = false; b.textContent = '全員に送る'; });
@@ -934,7 +1026,7 @@ $('bcSend').onclick = () => {
   const kind = id === 'remFree' ? 'free' : 'att';
   if (!confirm(kind === 'free' ? '空きコマ未登録の人に通知を送ります。' : '3日以内の活動日が未回答の人に通知を送ります。')) return;
   const b = $(id); b.disabled = true;
-  run('remindNow', pw, kind).then(r => toast(r.people + '人に送りました'))
+  run('remindNow', kind).then(r => toast(r.people + '人に送りました'))
     .catch(err => toast('送れませんでした：' + err.message))
     .finally(() => { b.disabled = false; });
 });
