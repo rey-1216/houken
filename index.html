@@ -1431,7 +1431,7 @@ function myVtrs(){
 }
 const canEditVtr = c => ME && (ME.level >= 1 || vtrRoles(c).length > 0);
 
-const VTR_SHOWN = ['特集タイトル','状態','V尺','編集者','補佐','締め切り','生放送','CATV','撮影日','時間','撮影者','アポ取り','外付け'];
+const VTR_SHOWN = ['特集タイトル','状態','V尺','編集者','補佐','締め切り','生放送','CATV','撮影日','時間','撮影者','アポ取り','アポ状況','外付け'];
 function vtrCard(r, year){
   const c = r.c, roles = vtrRoles(c), done = vtrDone(c);
   const v = { row: r, due: jDate(c['締め切り'], year) }, dc = vtrDueCls(v);
@@ -1443,9 +1443,16 @@ function vtrCard(r, year){
     (roles.length ? '<span class="tag" style="border-color:var(--event);color:var(--event)">あなた：' + roles.join('・') + '</span>' : '') + '</div>' +
     '<div class="hint">' + join([line('尺', c['V尺']), line('編集', c['編集者']), line('補佐', c['補佐'])]) + '</div>' +
     '<div class="hint">' + join([line('締め切り', c['締め切り'], dc), line('生放送', c['生放送']), line('CATV', c['CATV'])]) + '</div>' +
-    ((c['撮影日'] || c['撮影者'] || c['アポ取り']) ? '<div class="hint">' + join([line('撮影', [c['撮影日'], c['時間']].filter(x => x).join(' ')), line('撮影者', c['撮影者']), line('アポ取り', c['アポ取り'])]) + '</div>' : '') +
+    ((c['撮影日'] || c['撮影者'] || c['アポ取り'] || c['アポ状況']) ? '<div class="hint">' + join([line('撮影', [c['撮影日'], c['時間']].filter(x => x).join(' ')), line('撮影者', c['撮影者']), line('アポ取り', c['アポ取り']) + aponHtml(c['アポ状況'])]) + '</div>' : '') +
     ((c['外付け'] || extra.length) ? '<div class="hint">' + join([line('外付け', c['外付け'])].concat(extra)) + '</div>' : '') +
     (canEditVtr(c) ? '<div style="text-align:right"><button class="link" data-vedit="' + r.r + '">編集</button></div>' : '') + '</div>';
+}
+
+// アポ状況のしるし（済・完了・取れた・OK なら緑）
+function aponHtml(v){
+  if (!v) return '';
+  const ok = /済|完了|取れた|OK|ok/.test(v);
+  return ' <span class="st" style="' + (ok ? 'background:var(--ok);border-color:var(--ok);color:#fff' : 'border-color:var(--late);color:var(--late)') + '">アポ ' + esc(v) + '</span>';
 }
 
 function renderVtr(){
@@ -1521,9 +1528,14 @@ function vtrForm(d, r){
   form = { kind: 'vtr', year: d.year, row: r };
   const c = r ? r.c : {};
   openModal('<h2>' + (r ? 'VTRを編集' : 'VTRを追加（' + esc(d.year) + '）') + '</h2>' +
-    d.heads.map((h, i) => '<label class="who">' + esc(h) + (h === '状態' && d.statuses.length ?
-      '<select data-h="' + esc(h) + '"><option value="">（なし）</option>' + d.statuses.map(st => '<option' + (st === c[h] ? ' selected' : '') + '>' + esc(st) + '</option>').join('') + '</select>' :
-      '<input data-h="' + esc(h) + '" maxlength="200" value="' + esc(c[h] || '') + '">') + '</label>').join('') +
+    d.heads.map((h, i) => {
+      const op = (d.opts && d.opts[h]) || (h === '状態' ? d.statuses : null);
+      // 元の表の値が選択肢にないときも、消えないように残す
+      const list = op && op.length ? (c[h] && !op.includes(c[h]) ? op.concat(c[h]) : op) : null;
+      return '<label class="who">' + esc(h) + (list ?
+      '<select data-h="' + esc(h) + '"><option value="">（なし）</option>' + list.map(st => '<option' + (st === c[h] ? ' selected' : '') + '>' + esc(st) + '</option>').join('') + '</select>' :
+      '<input data-h="' + esc(h) + '" maxlength="200" value="' + esc(c[h] || '') + '">') + '</label>';
+    }).join('') +
     '<p class="hint">日付は今までの表と同じ書き方（例：4月22日、6/6（土））で入れてください。</p>' +
     '<div class="actions"><button class="btn" id="fSave">保存</button><button class="btn ghost" id="fClose">閉じる</button></div>');
 }
@@ -1553,7 +1565,7 @@ $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrol
 
 // ---------- バージョンと更新のお知らせ ----------
 // 更新するたびに、この番号を上げる
-const APP_VERSION = '1.5';
+const APP_VERSION = '1.6';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
