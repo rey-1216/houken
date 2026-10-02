@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>放送研究会 出欠</title>
-<meta name="description" content="活動日の出欠をここから回答してください">
-<meta property="og:title" content="放送研究会 出欠">
-<meta property="og:description" content="活動日の出欠をここから回答してください">
+<title>放研ポータル</title>
+<meta name="description" content="放送研究会の出欠と生放送の役職表はここから">
+<meta property="og:title" content="放研ポータル">
+<meta property="og:description" content="放送研究会の出欠と生放送の役職表はここから">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎙️</text></svg>">
 <style>
 :root{
@@ -30,10 +30,20 @@
 .memos b{margin-right:8px}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.6;padding-bottom:84px}
 header{background:var(--ink);color:var(--bg);padding:14px 16px 0}
-header h1{margin:0 0 10px;font-size:18px;font-weight:800;letter-spacing:.04em}
-nav{display:flex;gap:4px}
-nav button{flex:1;border:0;background:transparent;color:inherit;opacity:.6;font:inherit;font-weight:700;padding:10px 0;border-bottom:3px solid transparent;cursor:pointer}
-nav button.on{opacity:1;border-bottom-color:var(--live)}
+header h1{margin:0;font-size:18px;font-weight:800;letter-spacing:.04em}
+header{padding:14px 16px}
+header .bar-in{display:flex;align-items:center;gap:10px;min-height:28px}
+#back{border:0;background:transparent;color:inherit;font:inherit;font-size:14px;font-weight:700;padding:4px 10px 4px 0;cursor:pointer;opacity:.85}
+#viewTitle{font-size:14px;opacity:.7;font-weight:700}
+.menu{display:grid;gap:10px;margin-top:6px}
+.menu button{display:flex;justify-content:space-between;align-items:center;text-align:left;font:inherit;font-size:17px;font-weight:800;padding:16px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+.menu button small{display:block;font-size:12px;font-weight:400;color:var(--sub);margin-top:2px}
+.menu button::after{content:"›";font-size:22px;color:var(--sub)}
+.badge{display:inline-block;background:var(--live);color:#fff;font-size:12px;font-weight:700;border-radius:99px;padding:1px 8px;margin-left:8px;vertical-align:2px}
+.summary{display:grid;gap:8px;margin:4px 0 18px}
+.sum{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--pick);border-radius:10px;padding:10px 12px;font-size:14px}
+.sum.live{border-left-color:var(--live)}
+.sum b{display:block;font-size:12px;color:var(--sub);font-weight:700}
 main{max-width:640px;margin:0 auto;padding:16px}
 h2{font-size:16px;margin:28px 0 10px}
 label.who{display:block;font-weight:700;margin-bottom:14px}
@@ -104,18 +114,32 @@ td small{color:var(--sub);margin-left:3px}
 </head>
 <body>
 <header>
-  <h1>放送研究会 出欠</h1>
-  <nav>
-    <button data-tab="me" class="on">出欠を回答</button>
-    <button data-tab="admin">役職者</button>
-  </nav>
+  <div class="bar-in">
+    <button id="back" hidden>‹ メニュー</button>
+    <h1 id="brand">放研ポータル</h1>
+    <span id="viewTitle"></span>
+  </div>
 </header>
 
 <main>
-  <section id="me">
+  <section id="home">
     <label class="who">自分の名前
       <select id="who"><option value="">読み込み中…</option></select>
     </label>
+    <div id="summary" class="summary"></div>
+    <div class="menu">
+      <button data-go="me">出欠を回答<span id="meBadge"></span></button>
+      <button data-go="lineups">生放送の役職表</button>
+      <button data-go="admin">役職者<small>パスワードが必要です</small></button>
+    </div>
+  </section>
+
+  <section id="lineups" hidden>
+    <div id="lineupList"></div>
+  </section>
+
+  <section id="me" hidden>
+    <p class="hint" id="meWho"></p>
     <div id="myDays"></div>
   </section>
 
@@ -212,13 +236,64 @@ function toggle(kind, cur, t){
   return o.multi.filter(x => set.includes(x)).join(',');
 }
 
-// ---------- タブ ----------
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
-  $('me').hidden = b.dataset.tab !== 'me';
-  $('admin').hidden = b.dataset.tab !== 'admin';
-  $('bar').hidden = b.dataset.tab !== 'me' || !Object.keys(dirty).length;
-});
+// ---------- 画面の切り替え ----------
+const VIEWS = { home: '', me: '出欠を回答', lineups: '生放送の役職表', admin: '役職者' };
+let view = 'home';
+function show(){
+  view = (location.hash || '#home').slice(1);
+  if (!(view in VIEWS)) view = 'home';
+  Object.keys(VIEWS).forEach(v => $(v).hidden = v !== view);
+  $('back').hidden = view === 'home';
+  $('brand').hidden = view !== 'home';
+  $('viewTitle').textContent = VIEWS[view];
+  if (view === 'home') renderHome();
+  if (view === 'lineups') renderLineups();
+  if (view === 'me') renderMine();
+  updateBar();
+  window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', show);
+$('back').onclick = () => { location.hash = '#home'; };
+document.querySelector('.menu').onclick = e => {
+  const b = e.target.closest('button[data-go]'); if (b) location.hash = '#' + b.dataset.go;
+};
+
+// トップ：次の活動日と次の生放送
+function renderHome(){
+  const name = $('who').value, box = $('summary');
+  $('meBadge').innerHTML = '';
+  if (!init || !name) { box.innerHTML = init ? '<p class="hint">名前を選ぶと、次の予定と自分の役職が表示されます。</p>' : ''; return; }
+  const ask = init.days.filter(d => d.kind !== '生放送');
+  const next = ask[0];
+  let html = '';
+  if (next) {
+    const a = mine[next.date];
+    html += '<div class="sum"><b>次の活動日</b>' + fmt(next.date) + ' ' + next.kind + (next.live ? '・生放送' : '') + '　' +
+      (a ? '回答：' + esc(a.replace(/,/g, '・')) : '<span class="warn">未回答</span>') + '</div>';
+  }
+  const live = init.days.find(d => d.live);
+  if (live) {
+    const rows = ((BOOT.lineups || {})[live.date] || []).filter(r => r.name === name);
+    const txt = !((BOOT.lineups || {})[live.date] || []).length ? '役職はまだ決まっていません'
+      : rows.length ? rows.map(r => esc(r.role) + (r.slot === '補佐' ? '（補佐）' : '')).join('・') : '役職なし';
+    html += '<div class="sum live"><b>次の生放送</b>' + fmt(live.date) + '　' + txt + '</div>';
+  }
+  box.innerHTML = html;
+  const soon = addDays(init.today, 14);
+  const n = ask.filter(d => d.date <= soon && !mine[d.date]).length;
+  if (n) $('meBadge').innerHTML = '<span class="badge">未回答 ' + n + '</span>';
+}
+
+// 生放送の役職表（一覧）
+function renderLineups(){
+  const box = $('lineupList');
+  if (!init) { box.innerHTML = '<p class="empty">読み込み中…</p>'; return; }
+  const lives = init.days.filter(d => d.live);
+  if (!lives.length) { box.innerHTML = '<p class="empty">これからの生放送はまだ登録されていません。</p>'; return; }
+  box.innerHTML = lives.map(d => '<div class="day"><div class="day-top"><span class="d">' + fmt(d.date) + '</span>' +
+    '<span class="tag k-生放送">生放送</span>' + (d.memo ? '<span class="memo">' + esc(d.memo) + '</span>' : '') + '</div>' +
+    lineupHtml((BOOT.lineups || {})[d.date] || [], BOOT.roles || [], $('who').value) + '</div>').join('');
+}
 
 // ---------- 部員：回答 ----------
 // 前回のデータをすぐ表示して、裏で最新に入れ替える（2回目以降は待ちなし）
@@ -253,7 +328,7 @@ function applyBoot(b){
   mine = mineOf($('who').value); myNotes = notesOf($('who').value);
   Object.keys(dirty).forEach(k => { if (dirty[k] === (mine[k] || '')) delete dirty[k]; });
   Object.keys(dirtyNote).forEach(k => { if (dirtyNote[k] === (myNotes[k] || '')) delete dirtyNote[k]; });
-  updateBar(); renderMine();
+  updateBar(); renderMine(); renderHome(); if (view === 'lineups') renderLineups();
 }
 (() => {
   let cached = null;
@@ -272,7 +347,7 @@ $('who').onchange = () => {
   dirty = {}; dirtyNote = {}; updateBar();
   setSaved($('who').value);
   mine = mineOf($('who').value); myNotes = notesOf($('who').value);
-  renderMine();
+  renderMine(); renderHome();
 };
 
 // 役職表（見るだけ）
@@ -290,8 +365,9 @@ function lineupHtml(rows, roles, me){
 
 function renderMine(){
   const box = $('myDays');
+  $('meWho').textContent = $('who').value ? $('who').value + ' さんの予定' : '';
   if (!init) { box.innerHTML = '<p class="empty">読み込み中…</p>'; return; }
-  if (!$('who').value) { box.innerHTML = '<p class="empty">名前を選ぶと、これからの活動日が出ます。</p>'; return; }
+  if (!$('who').value) { box.innerHTML = '<p class="empty">メニューの画面で、先に自分の名前を選んでください。</p>'; return; }
   if (!init.days.length) { box.innerHTML = '<p class="empty">これからの活動日はまだ登録されていません。</p>'; return; }
   let html = '', group = null;
   init.days.forEach(d => {
@@ -341,7 +417,7 @@ $('myDays').onclick = e => {
 function updateBar(){
   const n = new Set(Object.keys(dirty).concat(Object.keys(dirtyNote))).size;
   $('barMsg').textContent = n + '日分を変更中';
-  $('bar').hidden = !n;
+  $('bar').hidden = !n || view !== 'me';
 }
 
 $('saveBtn').onclick = () => {
@@ -356,7 +432,7 @@ $('saveBtn').onclick = () => {
     saveBoot();
     Object.keys(sending).forEach(k => { if (dirty[k] === sending[k]) delete dirty[k]; });
     Object.keys(sendNote).forEach(k => { if (dirtyNote[k] === sendNote[k]) delete dirtyNote[k]; });
-    updateBar(); renderMine(); toast('保存しました');
+    updateBar(); renderMine(); renderHome(); toast('保存しました');
   }).catch(e => toast('保存できませんでした：' + e.message))
     .finally(() => { b.disabled = false; b.textContent = '保存する'; });
 };
@@ -577,6 +653,7 @@ function renderExp(){
   });
   $('exp').innerHTML = t + '</table></div>' + (past.size ? '' : '<p class="hint">まだ終わった生放送がありません。</p>');
 }
+show();
 </script>
 </body>
 </html>
