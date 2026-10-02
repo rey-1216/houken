@@ -1,0 +1,583 @@
+/**
+ * 放送研究会 出欠ツール（ステップ1：出席）
+ * スプレッドシートの「拡張機能 > Apps Script」に貼り付けて使います。
+ * 画面（index.html）は GitHub Pages に置きます。
+ */
+
+const SH = { MEMBERS: '部員', DAYS: '活動日', ANSWERS: '回答', SETTINGS: '設定',
+  ROLES: '役職', LINEUP: '生放送担当', FREE: '空きコマ' };
+// 空きコマの列（月1〜金5）
+const FREE_COLS = [];
+['月', '火', '水', '木', '金'].forEach(d => [1, 2, 3, 4, 5].forEach(k => FREE_COLS.push(d + k)));
+const PREP_DAYS = 14; // イベント前の準備期間（日）
+// 同じ日に重なったときの優先順。生放送は「印」として別に持つ（live）
+const KIND_ORDER = { 'イベント': 4, '準備': 3, '部会': 2, '生放送': 1 };
+const ALLOWED = ['出席', '遅刻', '欠席', '未定', 'PSH', '部会', '生放送',
+  '1コマ', '2コマ', '3コマ', '4コマ', '5コマ', '5コマ以降', '来られない'];
+const CAME = ['出席', '遅刻', 'PSH', '部会', '生放送'];
+
+// ---------- データの窓口（画面はGitHub Pagesに置く） ----------
+// 読み込み：URL?action=boot
+function doGet() {
+  return json_(() => boot_());
+}
+
+// 保存・役職者用：本文に {action: ..., ...} を送る
+function doPost(e) {
+  return json_(() => {
+    const b = JSON.parse(e.postData.contents);
+    if (b.action === 'saveMine') return saveMine(b.name, b.map, b.notes);
+    if (b.action === 'getAdmin') return getAdmin(b.pw);
+    if (b.action === 'setActual') return setActual(b.pw, b.date, b.name, b.actual);
+    if (b.action === 'setLineup') return setLineup(b.pw, b.date, b.items);
+    if (b.action === 'saveFree') return saveFree(b.name, b.slots);
+    if (b.action === 'broadcast') { checkPw_(b.pw); return push_(null, b.title || '放研ポータル', b.body); }
+    if (b.action === 'remindNow') { checkPw_(b.pw); return b.kind === 'free' ? remindFree() : remindAttendance(); }
+    throw new Error('不明な操作です');
+  });
+}
+
+function json_(fn) {
+  let out;
+  try { out = { ok: true, data: fn() }; }
+  catch (err) { out = { ok: false, error: err.message }; }
+  return ContentService.createTextOutput(JSON.stringify(out))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// 部員画面に必要なデータ一式。10分間キャッシュして、シートの読み込みを減らす
+function boot_() {
+  const today = key_(new Date());
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('boot-' + today);
+  if (hit) return JSON.parse(hit);
+  const plans = {}, notes = {};
+  answerRows_().forEach(r => {
+    if (r.date < today) return;
+    if (r.plan) plans[r.date + '|' + r.name] = r.plan;
+    if (r.note) notes[r.date + '|' + r.name] = r.note;
+  });
+  const days = calendar_().filter(d => d.date >= today);
+  const liveDates = days.filter(d => d.live).map(d => d.date);
+  const lineups = {};
+  lineupRows_().forEach(r => {
+    if (liveDates.indexOf(r.date) < 0) return;
+    (lineups[r.date] = lineups[r.date] || []).push(r);
+  });
+  const data = {
+    today: today,
+    members: members_(),
+    days: days,
+    plans: plans,
+    notes: notes,
+    roles: roles_(),
+    lineups: lineups,
+    free: free_(),
+    info: memberInfo_()
+  };
+  try { cache.put('boot-' + today, JSON.stringify(data), 600); } catch (e) {}
+  return data;
+}
+
+function clearCache_() {
+  CacheService.getScriptCache().remove('boot-' + key_(new Date()));
+}
+
+// シートを手で編集したら、キャッシュを消して次に開いたとき反映させる
+function onEdit() { clearCache_(); }
+
+// ---------- 最初に1回だけ実行 ----------
+function setup() {
+  const ss = SpreadsheetApp.getActive();
+  const mem = sheet_(ss, SH.MEMBERS, ['名前', '役職', '班', '学年', '表示名']);
+  const mh = mem.getRange(1, 1, 1, Math.max(mem.getLastColumn(), 1)).getValues()[0].map(v => String(v).trim());
+  ['班', '学年', '表示名'].forEach(h => {
+    if (mh.indexOf(h) < 0) { mem.getRange(1, mh.length + 1).setValue(h); mh.push(h); }
+  });
+  const d = sheet_(ss, SH.DAYS, ['日付', '種類', 'メモ']);
+  const ans = sheet_(ss, SH.ANSWERS, ['日付', '名前', '予定', '実績', '更新日時', 'メモ']);
+  if (ans.getRange(1, 6).getValue() === '') ans.getRange(1, 6).setValue('メモ');
+  sheet_(ss, SH.LINEUP, ['日付', '役職', '枠', '名前']);
+  freeSheet_();
+  const ro = sheet_(ss, SH.ROLES, ['略称', '正式名', '区分', '人数']);
+  if (ro.getLastRow() < 2) {
+    const r = [
+      ['D', 'ディレクター', '基本', 1], ['TK', 'タイムキーパー', '基本', 1],
+      ['男キャ', '男性キャスター', '基本', 1], ['女キャ', '女性キャスター', '基本', 1],
+      ['Mix', 'ミキサー', '基本', 2], ['SW', 'スイッチャー', '基本', 2],
+      ['T', 'テロップ', '基本', 2], ['V', 'VTR', '基本', 2],
+      ['1C', '1カメ', '基本', 2], ['2C', '2カメ', '基本', 2], ['3C', '3カメ', '基本', 2],
+      ['Pr', 'プロンプター', '基本', 2], ['FD', 'フロアディレクター', '基本', 1],
+      ['フリップAD', 'フリップAD', '任意', 1], ['ゲストAD', 'ゲストAD', '任意', 1],
+      ['5C', '5カメ', '任意', 1], ['5Cアシ', '5カメアシスタント', '任意', 1]
+    ];
+    ro.getRange(2, 1, r.length, 4).setValues(r);
+  }
+  ro.getRange('C2:C').setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(['基本', '任意'], true).build());
+  ro.getRange('D2:D').setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(['1', '2'], true).build());
+  const s = sheet_(ss, SH.SETTINGS, ['項目', '値']);
+  if (s.getLastRow() < 2) {
+    s.getRange(2, 1, 4, 2).setValues([
+      ['学期開始', '2026/10/01'],
+      ['学期終了', '2027/01/31'],
+      ['定例曜日', '水'],
+      ['管理パスワード', 'ここを変更してください']
+    ]);
+  }
+  d.getRange('B2:B').setDataValidation(
+    SpreadsheetApp.newDataValidation()
+      .requireValueInList(['生放送', 'イベント', '休み'], true)
+      .build()
+  );
+}
+
+function sheet_(ss, name, header) {
+  let sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(header);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+// ---------- 共通の道具 ----------
+let TZ = null;
+function sh_(name) { return SpreadsheetApp.getActive().getSheetByName(name); }
+function tz_() { return TZ || (TZ = SpreadsheetApp.getActive().getSpreadsheetTimeZone()); }
+
+// 日付を "2026-10-07" の形にそろえる
+function key_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, tz_(), 'yyyy-MM-dd');
+  const p = String(v).trim().split(/[\/\-.]/);
+  if (p.length !== 3) return '';
+  return p[0] + '-' + ('0' + p[1]).slice(-2) + '-' + ('0' + p[2]).slice(-2);
+}
+function date_(k) {
+  const p = k.split('-').map(Number);
+  return new Date(p[0], p[1] - 1, p[2], 12); // 昼12時にしてズレを防ぐ
+}
+function addDays_(k, n) {
+  const d = date_(k);
+  d.setDate(d.getDate() + n);
+  return key_(d);
+}
+
+function settings_() {
+  const o = {};
+  sh_(SH.SETTINGS).getDataRange().getValues().slice(1)
+    .forEach(r => { o[String(r[0]).trim()] = r[1]; });
+  return o;
+}
+
+function members_() {
+  return sh_(SH.MEMBERS).getDataRange().getValues().slice(1)
+    .map(r => String(r[0]).trim())
+    .filter(n => n);
+}
+
+// 部員の班・学年・表示名 { 名前: { groups: ['機材','美術'], grade: '1', short: '山田' } }
+function memberInfo_() {
+  const vals = sh_(SH.MEMBERS).getDataRange().getValues();
+  const head = vals[0].map(v => String(v).trim());
+  const gi = head.indexOf('班'), yi = head.indexOf('学年'), si = head.indexOf('表示名');
+  const out = {};
+  vals.slice(1).forEach(r => {
+    const n = String(r[0]).trim();
+    if (!n) return;
+    const groups = gi < 0 ? [] : String(r[gi]).split(/[,、，・\/\s]+/)
+      .map(g => g.trim().replace(/班$/, '')).filter(g => g);
+    const grade = yi < 0 ? '' : String(r[yi]).trim().replace(/年生?$/, '');
+    const short = si < 0 ? '' : String(r[si]).trim();
+    out[n] = { groups: groups, grade: grade, short: short };
+  });
+  return out;
+}
+
+function answerRows_() {
+  return sh_(SH.ANSWERS).getDataRange().getValues().slice(1)
+    .filter(r => r[0] !== '' && r[1] !== '')
+    .map(r => ({
+      date: key_(r[0]),
+      name: String(r[1]),
+      plan: String(r[2] || ''),
+      actual: String(r[3] || ''),
+      note: String(r[5] || '')
+    }));
+}
+
+// 役職の一覧（シートの並び順のまま）
+function roles_() {
+  return sh_(SH.ROLES).getDataRange().getValues().slice(1)
+    .filter(r => String(r[0]).trim())
+    .map(r => ({
+      abbr: String(r[0]).trim(),
+      name: String(r[1] || r[0]).trim(),
+      optional: String(r[2]).trim() === '任意',
+      max: Number(r[3]) === 2 ? 2 : 1
+    }));
+}
+
+// 生放送の担当（枠は「担当」か「補佐」）
+function lineupRows_() {
+  return sh_(SH.LINEUP).getDataRange().getValues().slice(1)
+    .filter(r => r[0] !== '' && r[1] !== '' && r[3] !== '')
+    .map(r => ({
+      date: key_(r[0]),
+      role: String(r[1]),
+      slot: String(r[2]) === '補佐' ? '補佐' : '担当',
+      name: String(r[3])
+    }));
+}
+
+// 学期の活動日一覧をつくる
+function calendar_() {
+  const st = settings_();
+  const start = key_(st['学期開始']);
+  const end = key_(st['学期終了']);
+  const dow = '日月火水木金土'.indexOf(String(st['定例曜日']).trim().charAt(0));
+  const days = {};
+
+  const put = (k, kind, memo) => {
+    const cur = days[k];
+    if (!cur || KIND_ORDER[kind] > KIND_ORDER[cur.kind]) {
+      days[k] = {
+        date: k,
+        kind: kind,
+        memo: memo || (cur ? cur.memo : ''),
+        prepFor: cur ? cur.prepFor : '',
+        live: cur ? cur.live : false
+      };
+    } else if (memo && !cur.memo) {
+      cur.memo = memo;
+    }
+  };
+
+  // 毎週の部会
+  if (start && end && dow >= 0) {
+    for (let k = start; k <= end; k = addDays_(k, 1)) {
+      if (date_(k).getDay() === dow) put(k, '部会');
+    }
+  }
+
+  // シートに登録した生放送・イベント・休み
+  const off = [];
+  sh_(SH.DAYS).getDataRange().getValues().slice(1).forEach(r => {
+    if (r[0] === '') return;
+    const k = key_(r[0]);
+    const type = String(r[1]).trim();
+    const memo = String(r[2] || '').trim();
+    if (!k) return;
+    if (type === '休み') {
+      off.push(k);
+    } else if (type === '生放送') {
+      put(k, '生放送', memo);
+      days[k].live = true; // 部会や準備の日と重なっても「生放送あり」の印を付ける
+    } else if (type === 'イベント') {
+      const name = memo || 'イベント';
+      put(k, 'イベント', memo);
+      days[k].prepFor = name;
+      for (let i = 1; i <= PREP_DAYS; i++) {
+        const pk = addDays_(k, -i);
+        const w = date_(pk).getDay();
+        if (w === 0 || w === 6) continue; // 土日は準備しない
+        put(pk, '準備');
+        if (!days[pk].prepFor) days[pk].prepFor = name;
+      }
+    }
+  });
+  off.forEach(k => { delete days[k]; });
+
+  return Object.keys(days).sort().map(k => days[k]);
+}
+
+// 回答を書き込む（同じ日・同じ人なら上書き）。まとめて1回で書き込む
+function upsert_(items) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sh = sh_(SH.ANSWERS);
+    const last = sh.getLastRow();
+    const vals = last > 1 ? sh.getRange(2, 1, last - 1, 6).getValues() : [];
+    const idx = {};
+    vals.forEach((r, i) => { idx[key_(r[0]) + '|' + r[1]] = i; });
+    const now = new Date();
+    const add = [];
+    let changed = false;
+    items.forEach(it => {
+      const i = idx[it.date + '|' + it.name];
+      if (i !== undefined) {
+        if (it.plan !== undefined) vals[i][2] = it.plan;
+        if (it.actual !== undefined) vals[i][3] = it.actual;
+        if (it.note !== undefined) vals[i][5] = it.note;
+        vals[i][4] = now;
+        changed = true;
+      } else {
+        // 先頭の ' で日付を文字のまま保存する
+        add.push(["'" + it.date, it.name, it.plan || '', it.actual || '', now, it.note || '']);
+      }
+    });
+    if (changed) {
+      sh.getRange(2, 3, vals.length, 4).setValues(vals.map(r => [r[2], r[3], r[4], r[5]]));
+    }
+    if (add.length) {
+      sh.getRange(last + 1, 1, add.length, 6).setValues(add);
+    }
+    clearCache_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getMine_(name) {
+  const out = {};
+  if (!name) return out;
+  answerRows_().forEach(r => { if (r.name === name && r.plan) out[r.date] = r.plan; });
+  return out;
+}
+
+function validPlan_(p) {
+  if (p === '') return true;
+  return String(p).split(',').every(t => ALLOWED.indexOf(t) >= 0);
+}
+
+// ---------- 部員用 ----------
+function saveMine(name, map, notes) {
+  if (members_().indexOf(name) < 0) throw new Error('部員シートに名前がありません');
+  map = map || {}; notes = notes || {};
+  const byDate = {};
+  Object.keys(map).forEach(k => {
+    if (validPlan_(map[k])) (byDate[k] = byDate[k] || { date: k, name: name }).plan = map[k];
+  });
+  Object.keys(notes).forEach(k => {
+    (byDate[k] = byDate[k] || { date: k, name: name }).note = String(notes[k]).slice(0, 100);
+  });
+  const items = Object.keys(byDate).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)).map(k => byDate[k]);
+  upsert_(items);
+  return true;
+}
+
+// ---------- 役職者用 ----------
+function checkPw_(pw) {
+  if (String(pw) !== String(settings_()['管理パスワード'])) {
+    throw new Error('パスワードが違います');
+  }
+}
+
+function getAdmin(pw) {
+  checkPw_(pw);
+  const today = key_(new Date());
+  const days = calendar_();
+  const members = members_();
+  const ans = {};
+  answerRows_().forEach(r => { ans[r.date + '|' + r.name] = { plan: r.plan, actual: r.actual, note: r.note }; });
+
+  const past = days.filter(d => d.date < today && (d.kind === '部会' || d.kind === 'イベント'));
+  const soonEnd = addDays_(today, 14);
+  const soon = days.filter(d => d.date >= today && d.date <= soonEnd && d.kind !== '生放送');
+
+  const stats = members.map(n => {
+    let came = 0;
+    past.forEach(d => {
+      const a = ans[d.date + '|' + n];
+      if (!a) return;
+      if (a.actual) { if (a.actual === '出席') came++; return; }
+      if (a.plan.split(',').some(t => CAME.indexOf(t) >= 0)) came++;
+    });
+    const unanswered = soon.filter(d => {
+      const a = ans[d.date + '|' + n];
+      return !a || !a.plan;
+    }).length;
+    return {
+      name: n,
+      rate: past.length ? Math.round(came / past.length * 100) : null,
+      unanswered: unanswered
+    };
+  });
+
+  return { today: today, days: days, members: members, answers: ans, stats: stats,
+    roles: roles_(), lineups: lineupRows_() };
+}
+
+function setActual(pw, date, name, actual) {
+  checkPw_(pw);
+  if (['出席', '欠席', ''].indexOf(actual) < 0) throw new Error('値が正しくありません');
+  upsert_([{ date: date, name: name, actual: actual }]);
+  return true;
+}
+
+// その回の役職表をまるごと置き換える
+function setLineup(pw, date, items) {
+  checkPw_(pw);
+  const members = members_();
+  const roles = {};
+  roles_().forEach(r => { roles[r.abbr] = r; });
+  const count = {};
+  const clean = (items || []).filter(it => {
+    if (!roles[it.role] || members.indexOf(it.name) < 0) return false;
+    const slot = it.slot === '補佐' ? '補佐' : '担当';
+    const k = it.role + '|' + slot;
+    count[k] = (count[k] || 0) + 1;
+    return count[k] <= (slot === '補佐' ? 1 : roles[it.role].max);
+  });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sh = sh_(SH.LINEUP);
+    const last = sh.getLastRow();
+    const keep = last > 1
+      ? sh.getRange(2, 1, last - 1, 4).getValues().filter(r => r[0] !== '' && key_(r[0]) !== date)
+          .map(r => ["'" + key_(r[0]), r[1], r[2], r[3]])
+      : [];
+    const rows = keep.concat(clean.map(it =>
+      ["'" + date, it.role, it.slot === '補佐' ? '補佐' : '担当', it.name]));
+    if (last > 1) sh.getRange(2, 1, last - 1, 4).clearContent();
+    if (rows.length) sh.getRange(2, 1, rows.length, 4).setValues(rows);
+    clearCache_();
+  } finally {
+    lock.releaseLock();
+  }
+  return true;
+}
+
+// ---------- 空きコマ ----------
+function freeSheet_() {
+  return sheet_(SpreadsheetApp.getActive(), SH.FREE, ['名前'].concat(FREE_COLS, ['更新日時']));
+}
+
+// { 名前: ['月1', '火3', ...] }
+function free_() {
+  const sh = sh_(SH.FREE);
+  if (!sh) return {};
+  const vals = sh.getDataRange().getValues();
+  if (vals.length < 2) return {};
+  const head = vals[0].map(v => String(v).trim());
+  const out = {};
+  vals.slice(1).forEach(r => {
+    const n = String(r[0]).trim();
+    if (!n) return;
+    out[n] = FREE_COLS.filter(c => {
+      const i = head.indexOf(c);
+      return i >= 0 && String(r[i]).trim() !== '';
+    });
+  });
+  return out;
+}
+
+function saveFree(name, slots) {
+  if (members_().indexOf(name) < 0) throw new Error('部員シートに名前がありません');
+  const set = (slots || []).filter(c => FREE_COLS.indexOf(c) >= 0);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sh = freeSheet_();
+    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(v => String(v).trim());
+    const row = head.map((h, i) => {
+      if (i === 0) return name;
+      if (h === '更新日時') return new Date();
+      return FREE_COLS.indexOf(h) >= 0 ? (set.indexOf(h) >= 0 ? '○' : '') : '';
+    });
+    const names = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues() : [];
+    let r = -1;
+    names.forEach((v, i) => { if (String(v[0]).trim() === name) r = i + 2; });
+    if (r > 0) sh.getRange(r, 1, 1, row.length).setValues([row]);
+    else sh.getRange(sh.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+    clearCache_();
+  } finally {
+    lock.releaseLock();
+  }
+  return true;
+}
+
+// ---------- 通知（OneSignal） ----------
+// APIキーはコードに書かず、「プロジェクトの設定 > スクリプト プロパティ」に
+// ONESIGNAL_API_KEY という名前で保存する
+const ONESIGNAL_APP_ID = '5353a1f5-1881-4d62-9322-325728da0214';
+const PORTAL_URL = 'https://rey-1216.github.io/houken/';
+
+// 画面側と同じ形で部員を識別する
+function pushId_(name) { return 'm_' + encodeURIComponent(name); }
+
+// names を省略（null）すると、通知をオンにしている全員に送る
+function push_(names, title, body) {
+  const key = PropertiesService.getScriptProperties().getProperty('ONESIGNAL_API_KEY');
+  if (!key) throw new Error('OneSignalのAPIキーが設定されていません');
+  if (!body) throw new Error('本文が空です');
+  const payload = {
+    app_id: ONESIGNAL_APP_ID,
+    target_channel: 'push',
+    headings: { en: title, ja: title },
+    contents: { en: body, ja: body },
+    url: PORTAL_URL
+  };
+  if (names) {
+    if (!names.length) return { sent: 0 };
+    payload.include_aliases = { external_id: names.map(pushId_) };
+  } else {
+    payload.included_segments = ['Total Subscriptions'];
+  }
+  const res = UrlFetchApp.fetch('https://api.onesignal.com/notifications', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: 'Key ' + key },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+  const code = res.getResponseCode(), txt = res.getContentText();
+  if (code >= 300) throw new Error('通知の送信に失敗しました（' + code + '）：' + txt.slice(0, 150));
+  return { sent: names ? names.length : -1 };
+}
+
+function fmt_(k) {
+  const d = date_(k);
+  return (d.getMonth() + 1) + '/' + d.getDate() + '(' + '日月火水木金土'.charAt(d.getDay()) + ')';
+}
+
+// 3日以内の活動日で、出欠が未回答の人に送る（毎日20時に自動実行）
+function remindAttendance() {
+  const today = key_(new Date()), end = addDays_(today, 3);
+  const days = calendar_().filter(d => d.date >= today && d.date <= end && d.kind !== '生放送');
+  if (!days.length) return { people: 0 };
+  const done = {};
+  answerRows_().forEach(r => { if (r.plan) done[r.date + '|' + r.name] = true; });
+  // 同じ内容の人はまとめて1回で送る
+  const groups = {};
+  members_().forEach(n => {
+    const miss = days.filter(d => !done[d.date + '|' + n]);
+    if (!miss.length) return;
+    const text = miss.map(d => fmt_(d.date) + (d.kind === '準備' ? 'イベント準備' : d.kind)).join('、');
+    (groups[text] = groups[text] || []).push(n);
+  });
+  let people = 0;
+  Object.keys(groups).forEach(text => {
+    try {
+      push_(groups[text], '出欠が未回答です', text + ' の出欠を、放研ポータルから回答してください');
+      people += groups[text].length;
+    } catch (e) { console.warn(e); }
+  });
+  return { people: people };
+}
+
+// 空きコマを登録していない人に送る（毎週月曜20時に自動実行）
+function remindFree() {
+  const free = free_();
+  const names = members_().filter(n => !free[n]);
+  if (names.length) push_(names, '空きコマが未登録です', '放研ポータルの「空きコマ」から、自分の空きコマを登録してください');
+  return { people: names.length };
+}
+
+// 自動リマインドの予約（最初に1回だけ実行。もう一度実行すると予約し直す）
+function setupTriggers() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => ['remindAttendance', 'remindFree'].indexOf(t.getHandlerFunction()) >= 0)
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('remindAttendance').timeBased().everyDays(1).atHour(20).create();
+  ScriptApp.newTrigger('remindFree').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(20).create();
+}
+
+// 動作確認用：通知をオンにしている全員にテスト通知を送る
+function testPush() {
+  push_(null, '放研ポータル', '通知のテストです。届いていれば設定完了です。');
+}

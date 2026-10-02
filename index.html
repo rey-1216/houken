@@ -3,6 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="放研ポータル">
+<meta name="theme-color" content="#18202C">
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <title>放研ポータル</title>
 <meta name="description" content="放送研究会の出欠と生放送の役職表はここから">
 <meta property="og:title" content="放研ポータル">
@@ -60,11 +66,13 @@ header .bar-in{display:flex;align-items:center;gap:10px;min-height:28px}
 .chips.sub button{font-size:12px;padding:4px 10px}
 .sum{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--pick);border-radius:10px;padding:10px 12px;font-size:14px}
 .sum.live{border-left-color:var(--live)}
+.sum.push{border-left-color:var(--event);margin:-8px 0 18px}
+.sum.push .btn{margin-top:6px}
 .sum b{display:block;font-size:12px;color:var(--sub);font-weight:700}
 main{max-width:640px;margin:0 auto;padding:16px}
 h2{font-size:16px;margin:28px 0 10px}
 label.who{display:block;font-weight:700;margin-bottom:14px}
-select,input{width:100%;font:inherit;padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);margin-top:6px}
+select,input,textarea{width:100%;font:inherit;padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);margin-top:6px}
 .btn{font:inherit;font-weight:700;border:0;border-radius:8px;padding:11px 18px;background:var(--ink);color:var(--bg);cursor:pointer}
 .hint{color:var(--sub);font-size:13px;margin:4px 0}
 
@@ -144,6 +152,7 @@ td small{color:var(--sub);margin-left:3px}
       <select id="who"><option value="">読み込み中…</option></select>
     </label>
     <div id="summary" class="summary"></div>
+    <div id="pushBox" class="sum push"></div>
     <div class="menu">
       <button data-go="me">出欠を回答<span id="meBadge"></span></button>
       <button data-go="lineups">生放送の役職表</button>
@@ -199,6 +208,15 @@ td small{color:var(--sub);margin-left:3px}
       <p class="hint">部員を選んで、その人の空きコマを登録・修正できます。</p>
       <select id="proxyWho"></select>
       <div id="proxyFree"></div>
+      <h2>通知</h2>
+      <p class="hint">ホーム画面に追加して、通知をオンにした人にだけ届きます。</p>
+      <input id="bcTitle" maxlength="50" placeholder="タイトル（例：明日の部会について）">
+      <textarea id="bcBody" rows="3" maxlength="300" placeholder="本文"></textarea>
+      <div class="actions"><button class="btn" id="bcSend">全員に送る</button></div>
+      <div class="actions">
+        <button class="btn ghost" id="remAtt">出欠の未回答者にリマインド</button>
+        <button class="btn ghost" id="remFree">空きコマ未登録者にリマインド</button>
+      </div>
     </div>
   </section>
 </main>
@@ -224,6 +242,12 @@ const NOT_COMING = ['欠席','来られない','未定'];
 const SHORT = {'生放送':'生','出席':'○','遅刻':'△','欠席':'×','未定':'?','PSH':'P','部会':'部',
   '1コマ':'1','2コマ':'2','3コマ':'3','4コマ':'4','5コマ':'5','5コマ以降':'5〜','来られない':'×'};
 const W = '日月火水木金土';
+// 通知まわり（先に宣言しておく）
+const ONESIGNAL_APP_ID = '5353a1f5-1881-4d62-9322-325728da0214';
+const pushId = n => 'm_' + encodeURIComponent(n); // Apps Script側と同じ形
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+let OS = null, osFailed = false;
 let init = null, mine = {}, dirty = {}, myNotes = {}, dirtyNote = {}, admin = null, pw = '', selDate = '';
 
 const $ = id => document.getElementById(id);
@@ -236,7 +260,7 @@ function fmt(k){ const [y,m,d] = k.split('-').map(Number); return m + '/' + d + 
 function addDays(k,n){ const [y,m,d] = k.split('-').map(Number); const t = new Date(y,m-1,d+n);
   return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'); }
 // サーバー（Apps Script）とのやりとり
-const ARGS = { saveMine: ['name','map','notes'], saveFree: ['name','slots'], getAdmin: ['pw'], setActual: ['pw','date','name','actual'], setLineup: ['pw','date','items'] };
+const ARGS = { saveMine: ['name','map','notes'], saveFree: ['name','slots'], getAdmin: ['pw'], setActual: ['pw','date','name','actual'], setLineup: ['pw','date','items'], broadcast: ['pw','title','body'], remindNow: ['pw','kind'] };
 const API = (typeof window.API_URL === 'string') ? window.API_URL : '';
 // 返事を読み取る。データ以外（エラーページなど）が返ってきたら中身の一部を見せる
 function readJson(r){
@@ -296,6 +320,7 @@ document.querySelector('.menu').onclick = e => {
 
 // トップ：次の活動日と次の生放送
 function renderHome(){
+  renderPush();
   const name = $('who').value, box = $('summary');
   $('meBadge').innerHTML = ''; $('freeBadge').innerHTML = '';
   if (!init || !name) { box.innerHTML = init ? '<p class="hint">名前を選ぶと、次の予定と自分の役職が表示されます。</p>' : ''; return; }
@@ -385,7 +410,7 @@ $('who').onchange = () => {
   setSaved($('who').value);
   mine = mineOf($('who').value); myNotes = notesOf($('who').value);
   myFreeEdit = null;
-  renderMine(); renderHome();
+  renderMine(); renderHome(); syncPushUser();
 };
 
 // 役職表（見るだけ）
@@ -837,6 +862,82 @@ $('proxyFree').onclick = e => {
     renderProxy(); toast(name + ' さんの空きコマを保存しました');
   }).catch(err => { b.disabled = false; b.textContent = name + ' さんの空きコマを保存'; toast('保存できませんでした：' + err.message); });
 };
+
+// ---------- 通知（OneSignal） ----------
+
+window.OneSignalDeferred = window.OneSignalDeferred || [];
+OneSignalDeferred.push(async function(OneSignal){
+  try {
+    await OneSignal.init({
+      appId: ONESIGNAL_APP_ID,
+      serviceWorkerPath: 'houken/OneSignalSDKWorker.js',
+      serviceWorkerParam: { scope: '/houken/' }
+    });
+    OS = OneSignal;
+    OneSignal.Notifications.addEventListener('permissionChange', renderPush);
+    OneSignal.User.PushSubscription.addEventListener('change', renderPush);
+    syncPushUser();
+  } catch(e) { osFailed = true; console.warn(e); }
+  renderPush();
+});
+setTimeout(() => { if (!OS) { osFailed = true; renderPush(); } }, 10000);
+
+function syncPushUser(){
+  const n = $('who').value;
+  if (OS && n) { try { OS.login(pushId(n)); } catch(e){ console.warn(e); } }
+}
+
+function renderPush(){
+  const box = $('pushBox'); if (!box) return;
+  let html;
+  if (isIOS && !standalone) {
+    html = '<b>通知を受け取るには</b>Safariの共有ボタン（□に↑）から「ホーム画面に追加」して、ホーム画面のアイコンから開いてください。';
+  } else if (!OS) {
+    html = '<b>通知</b>' + (osFailed ? 'この画面では通知を使えません。' : '準備中…');
+  } else if (!OS.Notifications.isPushSupported()) {
+    html = '<b>通知</b>この端末・ブラウザは通知に対応していません。';
+  } else if (!$('who').value) {
+    html = '<b>通知</b>上で自分の名前を選ぶと、通知をオンにできます。';
+  } else if (OS.Notifications.permission && OS.User.PushSubscription.optedIn) {
+    html = '<b>通知</b>オンになっています。';
+  } else if (window.Notification && Notification.permission === 'denied') {
+    html = '<b>通知</b>通知がオフになっています。端末の「設定 > 通知」から放研ポータルを許可してください。';
+  } else {
+    html = '<b>通知</b>出欠のリマインドやお知らせが届きます。<br><button class="btn" id="pushOn">通知をオンにする</button>';
+  }
+  box.innerHTML = html;
+}
+
+$('pushBox').onclick = async e => {
+  if (e.target.id !== 'pushOn' || !OS) return;
+  try {
+    await OS.Notifications.requestPermission();
+    if (OS.Notifications.permission) await OS.User.PushSubscription.optIn();
+    syncPushUser();
+    if (OS.Notifications.permission) toast('通知をオンにしました');
+  } catch(err) { toast('通知をオンにできませんでした'); console.warn(err); }
+  renderPush();
+};
+
+// 役職者：お知らせとリマインド
+$('bcSend').onclick = () => {
+  const title = $('bcTitle').value.trim(), body = $('bcBody').value.trim();
+  if (!body) { toast('本文を入れてください'); return; }
+  if (!confirm('通知をオンにしている全員に送ります。よろしいですか？')) return;
+  const b = $('bcSend'); b.disabled = true; b.textContent = '送信中…';
+  run('broadcast', pw, title, body).then(() => {
+    $('bcTitle').value = ''; $('bcBody').value = ''; toast('送信しました');
+  }).catch(err => toast('送れませんでした：' + err.message))
+    .finally(() => { b.disabled = false; b.textContent = '全員に送る'; });
+};
+['remAtt', 'remFree'].forEach(id => $(id).onclick = () => {
+  const kind = id === 'remFree' ? 'free' : 'att';
+  if (!confirm(kind === 'free' ? '空きコマ未登録の人に通知を送ります。' : '3日以内の活動日が未回答の人に通知を送ります。')) return;
+  const b = $(id); b.disabled = true;
+  run('remindNow', pw, kind).then(r => toast(r.people + '人に送りました'))
+    .catch(err => toast('送れませんでした：' + err.message))
+    .finally(() => { b.disabled = false; });
+});
 
 show();
 </script>
