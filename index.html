@@ -24,6 +24,10 @@
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
+.note{margin-top:8px;font-size:14px;padding:8px 10px}
+.memos{margin:6px 0 14px;font-size:14px}
+.memos div{padding:3px 0;border-bottom:1px dashed var(--line)}
+.memos b{margin-right:8px}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.6;padding-bottom:84px}
 header{background:var(--ink);color:var(--bg);padding:14px 16px 0}
 header h1{margin:0 0 10px;font-size:18px;font-weight:800;letter-spacing:.04em}
@@ -152,25 +156,28 @@ td small{color:var(--sub);margin-left:3px}
 // 日の種類ごとの選択肢。multi は複数選べる、solo は選ぶと他が外れる
 const OPT = {
   '部会':   { multi: ['PSH','部会','遅刻'], solo: ['欠席','未定'] },
+  '部会生放送': { multi: ['生放送','PSH','部会','遅刻'], solo: ['欠席','未定'] }, // 生放送がある水曜（時間順）
   '生放送': { multi: [], solo: [] }, // 生放送だけの日は回答なし
   'イベント': { multi: [], solo: ['出席','欠席'] },
   '準備':   { multi: ['1コマ','2コマ','3コマ','4コマ','5コマ','5コマ以降'], solo: ['来られない'] }
 };
 const NOT_COMING = ['欠席','来られない','未定'];
-const SHORT = {'出席':'○','遅刻':'△','欠席':'×','未定':'?','PSH':'P','部会':'部',
+const SHORT = {'生放送':'生','出席':'○','遅刻':'△','欠席':'×','未定':'?','PSH':'P','部会':'部',
   '1コマ':'1','2コマ':'2','3コマ':'3','4コマ':'4','5コマ':'5','5コマ以降':'5〜','来られない':'×'};
 const W = '日月火水木金土';
-let init = null, mine = {}, dirty = {}, admin = null, pw = '', selDate = '';
+let init = null, mine = {}, dirty = {}, myNotes = {}, dirtyNote = {}, admin = null, pw = '', selDate = '';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const parts = p => p ? p.split(',') : [];
 const optsOf = kind => OPT[kind] || OPT['部会'];
+// 生放送がある部会の日は専用の選択肢にする
+const kindKey = d => d.kind === '部会' && d.live ? '部会生放送' : d.kind;
 function fmt(k){ const [y,m,d] = k.split('-').map(Number); return m + '/' + d + '(' + W[new Date(y,m-1,d).getDay()] + ')'; }
 function addDays(k,n){ const [y,m,d] = k.split('-').map(Number); const t = new Date(y,m-1,d+n);
   return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'); }
 // サーバー（Apps Script）とのやりとり
-const ARGS = { saveMine: ['name','map'], getAdmin: ['pw'], setActual: ['pw','date','name','actual'], setLineup: ['pw','date','items'] };
+const ARGS = { saveMine: ['name','map','notes'], getAdmin: ['pw'], setActual: ['pw','date','name','actual'], setLineup: ['pw','date','items'] };
 const API = (typeof window.API_URL === 'string') ? window.API_URL : '';
 // 返事を読み取る。データ以外（エラーページなど）が返ってきたら中身の一部を見せる
 function readJson(r){
@@ -225,6 +232,15 @@ function mineOf(name){
   return m;
 }
 function saveBoot(){ try { localStorage.setItem('boot', JSON.stringify(BOOT)); } catch(e){} }
+function notesOf(name){
+  const m = {};
+  if (!name || !BOOT || !BOOT.notes) return m;
+  Object.keys(BOOT.notes).forEach(k => {
+    const i = k.indexOf('|');
+    if (k.slice(i + 1) === name) m[k.slice(0, i)] = BOOT.notes[k];
+  });
+  return m;
+}
 function applyBoot(b){
   const today = todayKey();
   BOOT = b;
@@ -233,8 +249,9 @@ function applyBoot(b){
   $('who').innerHTML = '<option value="">選んでください</option>' +
     b.members.map(n => '<option>' + esc(n) + '</option>').join('');
   if (cur && b.members.includes(cur)) $('who').value = cur;
-  mine = mineOf($('who').value);
+  mine = mineOf($('who').value); myNotes = notesOf($('who').value);
   Object.keys(dirty).forEach(k => { if (dirty[k] === (mine[k] || '')) delete dirty[k]; });
+  Object.keys(dirtyNote).forEach(k => { if (dirtyNote[k] === (myNotes[k] || '')) delete dirtyNote[k]; });
   updateBar(); renderMine();
 }
 (() => {
@@ -250,10 +267,10 @@ function applyBoot(b){
 })();
 
 $('who').onchange = () => {
-  if (Object.keys(dirty).length && !confirm('保存していない変更があります。名前を切り替えますか？')) return;
-  dirty = {}; updateBar();
+  if ((Object.keys(dirty).length || Object.keys(dirtyNote).length) && !confirm('保存していない変更があります。名前を切り替えますか？')) return;
+  dirty = {}; dirtyNote = {}; updateBar();
   setSaved($('who').value);
-  mine = mineOf($('who').value);
+  mine = mineOf($('who').value); myNotes = notesOf($('who').value);
   renderMine();
 };
 
@@ -284,15 +301,17 @@ function renderMine(){
         '<p class="hint">準備の日は、来られるコマをすべて選んでください。</p>';
     }
     const cur = parts(d.date in dirty ? dirty[d.date] : (mine[d.date] || ''));
-    const o = optsOf(d.kind);
+    const kk = kindKey(d);
+    const o = optsOf(kk);
+    const note = d.date in dirtyNote ? dirtyNote[d.date] : (myNotes[d.date] || '');
     html += '<div class="day"><div class="day-top"><span class="d">' + fmt(d.date) + '</span>' +
       '<span class="tag k-' + d.kind + '">' + d.kind + '</span>' +
       (d.live && d.kind !== '生放送' ? '<span class="tag k-生放送">生放送</span>' : '') +
       (d.memo ? '<span class="memo">' + esc(d.memo) + '</span>' : '') + '</div>' +
       (d.kind === '生放送' ? '<p class="hint">出欠の回答はいりません</p>' : '<div class="seg">' +
       o.multi.concat(o.solo).map(t => '<button class="t-' + t + (cur.includes(t) ? ' on' : '') +
-        '" data-d="' + d.date + '" data-k="' + d.kind + '" data-t="' + t + '">' + t + '</button>').join('') +
-      '</div>') +
+        '" data-d="' + d.date + '" data-k="' + kk + '" data-t="' + t + '">' + t + '</button>').join('') +
+      '</div><input class="note" data-d="' + d.date + '" maxlength="100" placeholder="メモ（例：部会に15分遅れます）" value="' + esc(note) + '">') +
       (d.live ? '<details class="lineup"><summary>この回の役職表を見る</summary>' +
         lineupHtml((BOOT.lineups || {})[d.date] || [], BOOT.roles || [], $('who').value) + '</details>' : '') +
       '</div>';
@@ -300,6 +319,14 @@ function renderMine(){
   if (group) html += '</div>';
   box.innerHTML = html;
 }
+
+$('myDays').oninput = e => {
+  const t = e.target; if (!t.classList.contains('note')) return;
+  const k = t.dataset.d;
+  dirtyNote[k] = t.value;
+  if (dirtyNote[k] === (myNotes[k] || '')) delete dirtyNote[k];
+  updateBar();
+};
 
 $('myDays').onclick = e => {
   const b = e.target.closest('button[data-t]'); if (!b) return;
@@ -311,19 +338,23 @@ $('myDays').onclick = e => {
 };
 
 function updateBar(){
-  const n = Object.keys(dirty).length;
+  const n = new Set(Object.keys(dirty).concat(Object.keys(dirtyNote))).size;
   $('barMsg').textContent = n + '日分を変更中';
   $('bar').hidden = !n;
 }
 
 $('saveBtn').onclick = () => {
   const b = $('saveBtn'); b.disabled = true; b.textContent = '保存中…';
-  const sending = Object.assign({}, dirty);
-  run('saveMine', $('who').value, sending).then(() => {
-    Object.assign(mine, sending);
-    Object.keys(sending).forEach(k => { BOOT.plans[k + '|' + $('who').value] = sending[k]; });
+  const sending = Object.assign({}, dirty), sendNote = Object.assign({}, dirtyNote);
+  const who = $('who').value;
+  run('saveMine', who, sending, sendNote).then(() => {
+    Object.assign(mine, sending); Object.assign(myNotes, sendNote);
+    Object.keys(sending).forEach(k => { BOOT.plans[k + '|' + who] = sending[k]; });
+    BOOT.notes = BOOT.notes || {};
+    Object.keys(sendNote).forEach(k => { BOOT.notes[k + '|' + who] = sendNote[k]; });
     saveBoot();
     Object.keys(sending).forEach(k => { if (dirty[k] === sending[k]) delete dirty[k]; });
+    Object.keys(sendNote).forEach(k => { if (dirtyNote[k] === sendNote[k]) delete dirtyNote[k]; });
     updateBar(); renderMine(); toast('保存しました');
   }).catch(e => toast('保存できませんでした：' + e.message))
     .finally(() => { b.disabled = false; b.textContent = '保存する'; });
@@ -361,11 +392,21 @@ function renderChips(){
 }
 $('dateChips').onclick = e => { const b = e.target.closest('button'); if (!b) return; selDate = b.dataset.d; renderChips(); renderDay(); };
 
+// メモの一覧（日付ごと）
+function memosHtml(dates, withDate){
+  const rows = [];
+  dates.forEach(dt => admin.members.forEach(n => {
+    const a = ans(dt, n);
+    if (a.note) rows.push('<div>' + (withDate ? fmt(dt) + ' ' : '') + '<b>' + esc(n) + '</b>' + esc(a.note) + '</div>');
+  }));
+  return rows.length ? '<b>メモ</b><div class="memos">' + rows.join('') + '</div>' : '';
+}
+
 function renderDay(){
   const box = $('dayDetail');
   if (!selDate) { box.innerHTML = '<p class="empty">活動日がありません。</p>'; return; }
   const day = admin.days.find(d => d.date === selDate);
-  const o = optsOf(day.kind);
+  const o = optsOf(kindKey(day));
   const cats = o.multi.concat(o.solo);
   const by = {}; cats.forEach(c => by[c] = []); const none = [];
   admin.members.forEach(n => {
@@ -383,11 +424,12 @@ function renderDay(){
       if (!list.length) return;
       html += '<b>' + c + '</b><div class="names">' + list.map(n => '<span>' + esc(n) + '</span>').join('') + '</div>';
     });
+    html += memosHtml([selDate], false);
   } else {
     html += '<p class="hint">実際に来たかどうかをつけられます（もう一度押すと取り消し）。</p>';
     admin.members.forEach(n => {
       const a = ans(selDate, n);
-      html += '<div class="row"><span>' + esc(n) + '<small>予定：' + (a.plan ? esc(a.plan.replace(/,/g, '・')) : '未回答') + '</small></span><div class="seg two">' +
+      html += '<div class="row"><span>' + esc(n) + '<small>予定：' + (a.plan ? esc(a.plan.replace(/,/g, '・')) : '未回答') + (a.note ? '／' + esc(a.note) : '') + '</small></span><div class="seg two">' +
         ['出席','欠席'].map(s => '<button class="t-' + s + (a.actual === s ? ' on' : '') + '" data-n="' + esc(n) + '" data-s="' + s + '">' + s + '</button>').join('') +
         '</div></div>';
     });
@@ -430,7 +472,8 @@ function renderEvents(){
       t += '<tr><td>' + esc(n) + '</td>' + cols.map(c => cell(ans(c.date, n).plan)).join('') + '</tr>';
     });
     t += '<tr class="total"><td>来られる人数</td>' + cols.map(c => '<td>' + admin.members.filter(n => canCome(ans(c.date, n).plan)).length + '</td>').join('') + '</tr>';
-    return t + '</table></div><p class="hint">数字は来られるコマ（5〜は5コマ以降）。P＝PSH、部＝部会、○出席、△遅刻、×来られない</p>';
+    return t + '</table></div><p class="hint">数字は来られるコマ（5〜は5コマ以降）。生＝生放送、P＝PSH、部＝部会、○出席、△遅刻、×来られない</p>' +
+      memosHtml(cols.map(c => c.date), true);
   }).join('');
 }
 
