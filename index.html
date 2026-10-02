@@ -94,6 +94,9 @@ header .bar-in{display:flex;align-items:center;gap:10px;min-height:28px}
 #modal{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:30;display:flex;align-items:flex-end;justify-content:center;padding:12px}
 .mbox{background:var(--panel);color:var(--ink);border-radius:14px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:16px}
 .mbox h2{margin-top:0}
+.ptable td,.ptable th{text-align:center} .ptable td:first-child,.ptable th:first-child{text-align:left}
+.ptable input{width:22px;height:22px;margin:0}
+.mrow{padding:8px 0;border-bottom:1px solid var(--line)} .mrow b{display:block;font-size:14px}
 .mybox{margin-top:28px;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:10px 12px}
 .mybox summary{font-weight:800;cursor:pointer;padding:4px 0}
 .ver{text-align:center;color:var(--sub);font-size:12px;padding:28px 0 8px}
@@ -261,7 +264,7 @@ td small{color:var(--sub);margin-left:3px}
     <div id="adminBody" hidden>
       <div id="adminSum" class="asum"></div>
       <div id="adminTabs" class="chips tabs">
-        <button data-tab="att">出欠</button><button data-tab="event">イベント</button><button data-tab="live">生放送</button><button data-tab="notice">通知</button><button data-tab="other">その他</button>
+        <button data-tab="att">出欠</button><button data-tab="event">イベント</button><button data-tab="live">生放送</button><button data-tab="notice">通知</button><button data-tab="other">その他</button><button data-tab="perms">権限</button>
       </div>
       <div class="apane" data-pane="att">
         <h2>日付ごとの出欠</h2>
@@ -281,8 +284,9 @@ td small{color:var(--sub);margin-left:3px}
         <div id="lineupEdit"></div>
       </div>
       <div class="apane" data-pane="notice" hidden>
+        <p class="hint">通知は、ホーム画面に追加して通知をオンにした人にだけ届きます。</p>
+        <div id="remSec">
         <h2>リマインド</h2>
-        <p class="hint">ホーム画面に追加して、通知をオンにした人にだけ届きます。</p>
         <div class="actions">
           <button class="btn ghost" id="remAtt">出欠の未回答者にリマインド</button>
           <button class="btn ghost" id="remFree">空きコマ未登録者にリマインド</button>
@@ -294,12 +298,23 @@ td small{color:var(--sub);margin-left:3px}
         <input id="dmTitle" maxlength="50" placeholder="タイトル（例：撮影の件）">
         <textarea id="dmBody" rows="3" maxlength="300" placeholder="本文"></textarea>
         <div class="actions"><button class="btn" id="dmSend">選んだ人に送る</button></div>
+        </div>
         <div id="bcSec">
           <h2>全員へのお知らせ</h2>
           <input id="bcTitle" maxlength="50" placeholder="タイトル（例：明日の部会について）">
           <textarea id="bcBody" rows="3" maxlength="300" placeholder="本文"></textarea>
           <div class="actions"><button class="btn" id="bcSend">全員に送る</button></div>
         </div>
+      </div>
+      <div class="apane" data-pane="perms" hidden>
+        <h2>役職と権限</h2>
+        <p class="hint">役職ごとに、使える機能にチェックを入れてください。</p>
+        <div id="permTable"></div>
+        <div class="actions"><input id="newRole" maxlength="20" placeholder="新しい役職名（例：副部長）" style="flex:1;min-width:160px;margin:0"><button class="btn ghost" id="addRole">役職を追加</button></div>
+        <h2>部員の役職</h2>
+        <p class="hint">役職をタップして付け外しします（兼任OK）。</p>
+        <div id="permMembers"></div>
+        <div class="actions"><button class="btn" id="permSave">権限の設定を保存</button></div>
       </div>
       <div class="apane" data-pane="other" hidden>
         <h2>空きコマの代理登録</h2>
@@ -352,11 +367,13 @@ function fmt(k){ const [y,m,d] = k.split('-').map(Number); return m + '/' + d + 
 function addDays(k,n){ const [y,m,d] = k.split('-').map(Number); const t = new Date(y,m-1,d+n);
   return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'); }
 // サーバー（Apps Script）とのやりとり
-const ARGS = { vtr: ['year'], saveVtr: ['year','row','title','changes'], addVtr: ['year','cells'], saveProject: ['p'], deleteProject: ['id'], saveTask: ['t','notify'], deleteTask: ['id'], sendTo: ['names','title','body'], login: ['sid','pass'], setPassword: ['sid','current','next'], boot: [], saveMine: ['name','map','notes'], saveFree: ['name','slots'], getAdmin: [],
+const ARGS = { getPerms: [], savePerms: ['roles','assign'], vtr: ['year'], saveVtr: ['year','row','title','changes'], addVtr: ['year','cells'], saveProject: ['p'], deleteProject: ['id'], saveTask: ['t','notify'], deleteTask: ['id'], sendTo: ['names','title','body'], login: ['sid','pass'], setPassword: ['sid','current','next'], boot: [], saveMine: ['name','map','notes'], saveFree: ['name','slots'], getAdmin: [],
   setActual: ['date','name','actual'], setLineup: ['date','items'], broadcast: ['title','body'], remindNow: ['kind'] };
 // ログイン情報（この端末に保存）
 let TOKEN = (() => { try { return localStorage.getItem('token') || ''; } catch(e){ return ''; } })();
 let ME = null;
+// 権限を持っているか（部の役職から計算された一覧で判断）
+function can(k){ return !!(ME && ME.perms && ME.perms.includes(k)); }
 function setToken(t){ TOKEN = t; try { t ? localStorage.setItem('token', t) : localStorage.removeItem('token'); } catch(e){} }
 const API = (typeof window.API_URL === 'string') ? window.API_URL : '';
 // 返事を読み取る。データ以外（エラーページなど）が返ってきたら中身の一部を見せる
@@ -401,7 +418,7 @@ let view = 'home';
 function show(){
   view = (location.hash || '#home').slice(1);
   if (!(view in VIEWS)) view = 'home';
-  if (view !== 'home' && (!TOKEN || (view === 'admin' && (!ME || ME.level < 1)))) { location.hash = '#home'; return; }
+  if (view !== 'home' && (!TOKEN || (view === 'admin' && !can('admin')))) { location.hash = '#home'; return; }
   Object.keys(VIEWS).forEach(v => $(v).hidden = v !== view);
   $('back').hidden = view === 'home';
   $('brand').hidden = view !== 'home';
@@ -506,7 +523,7 @@ function applyBoot(b){
   $('who').innerHTML = '<option>' + esc(ME.name) + '</option>';
   $('who').value = ME.name;
   $('meName').textContent = ME.name;
-  $('menuAdmin').hidden = ME.level < 1;
+  $('menuAdmin').hidden = !can('admin');
   $('loginForm').hidden = true; $('pwForm').hidden = true; $('homeBody').hidden = false;
   mine = mineOf($('who').value); myNotes = notesOf($('who').value);
   Object.keys(dirty).forEach(k => { if (dirty[k] === (mine[k] || '')) delete dirty[k]; });
@@ -701,7 +718,13 @@ function renderAdmin(){
   const next = lives.find(d => d.date >= admin.today) || lives[lives.length - 1];
   liveSel = next ? next.date : '';
   loadEdit(); renderLive();
-  $('bcSec').hidden = admin.level < 2; // お知らせの送信は幹部だけ
+  // 権限に合わせて、見せるタブと欄を切り替える
+  $('bcSec').hidden = !can('broadcast');
+  $('remSec').hidden = !can('remind');
+  document.querySelector('#adminTabs [data-tab="live"]').hidden = !can('lineup');
+  document.querySelector('#adminTabs [data-tab="notice"]').hidden = !can('remind') && !can('broadcast');
+  document.querySelector('#adminTabs [data-tab="other"]').hidden = !can('proxyFree');
+  document.querySelector('#adminTabs [data-tab="perms"]').hidden = !can('perms');
   renderAdminSum(); showTab(adminTab); renderDmPick();
   $('proxyWho').innerHTML = '<option value="">部員を選ぶ</option>' + admin.members.map(n => '<option>' + esc(n) + '</option>').join('');
   proxyEdit = null; renderProxy();
@@ -742,7 +765,7 @@ function renderDay(){
     '<span class="warn">未回答 ' + none.length + '</span></div>';
   if (day.memo) html += '<p class="hint">' + esc(day.memo) + '</p>';
 
-  if (selDate > admin.today) {
+  if (selDate > admin.today || !can('actual')) {
     cats.concat('未回答').forEach(c => {
       const list = c === '未回答' ? none : by[c];
       if (!list.length) return;
@@ -802,7 +825,7 @@ function renderEvents(){
 }
 
 function renderStats(){
-  const top = admin.level >= 2;
+  const top = can('rate');
   $('statsTitle').textContent = top ? '出席率と未回答' : '未回答';
   const rows = admin.stats.slice().sort((a, b) => b.unanswered - a.unanswered || (a.rate ?? 101) - (b.rate ?? 101));
   $('stats').innerHTML = '<div class="scroll"><table style="width:100%"><tr><th>名前</th>' + (top ? '<th>出席率</th>' : '') + '<th>未回答</th></tr>' +
@@ -895,7 +918,7 @@ function renderExp(){
       (came[r.name] = came[r.name] || new Set()).add(dt);
     });
   });
-  const roles = BOOT.roles || [], top = ME.level >= 2;
+  const roles = BOOT.roles || [], top = can('rate');
   let t = '<div class="scroll"><table><tr><th>名前</th>' + (top ? '<th>出席率</th>' : '') + roles.map(r => '<th>' + esc(r.abbr) + '</th>').join('') + '</tr>';
   BOOT.members.forEach(n => {
     const rate = past.size ? Math.round((came[n] ? came[n].size : 0) / past.size * 100) + '%' : '–';
@@ -1131,7 +1154,10 @@ $('bcSend').onclick = () => {
 // ---------- 管理者：上のまとめとタブ ----------
 let adminTab = 'att';
 function showTab(t){
+  const btn = document.querySelector('#adminTabs [data-tab="' + t + '"]');
+  if (!btn || btn.hidden) t = 'att';
   adminTab = t;
+  if (t === 'perms') loadPerms();
   document.querySelectorAll('#adminTabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   document.querySelectorAll('.apane').forEach(p => p.hidden = p.dataset.pane !== t);
 }
@@ -1244,8 +1270,8 @@ function dueCls(t){
   if (t.due <= addDays(today, 3)) return 'soon';
   return '';
 }
-function canFull(x){ return ME && (ME.level >= 1 || x.by === ME.name); }
-function canStatus(t){ return ME && (ME.level >= 1 || t.by === ME.name || t.members.includes(ME.name)); }
+function canFull(x){ return ME && (can('admin') || x.by === ME.name); }
+function canStatus(t){ return ME && (can('admin') || t.by === ME.name || t.members.includes(ME.name)); }
 
 function taskHtml(t, withProj){
   const p = W_().projects.find(x => x.id === t.pid), dc = dueCls(t);
@@ -1433,7 +1459,7 @@ function myVtrs(){
   return d.rows.filter(r => !vtrDone(r.c) && vtrRoles(r.c).length)
     .map(r => ({ row: r, due: jDate(r.c['締め切り'], d.year) })).sort((a, b) => byDue(a, b));
 }
-const canEditVtr = c => ME && (ME.level >= 1 || vtrRoles(c).length > 0);
+const canEditVtr = c => ME && (can('vtr') || vtrRoles(c).length > 0);
 
 const VTR_SHOWN = ['特集タイトル','状態','V尺','編集者','補佐','締め切り','生放送','CATV','撮影日','時間','撮影者','アポ取り','アポ状況','外付け'];
 function vtrCard(r, year, showYear){
@@ -1499,7 +1525,7 @@ function renderVtr(){
   if (!data || data.year !== vtrYearSel) { box.innerHTML = html + '<p class="empty">読み込み中…</p>'; return; }
   html += '<div class="chips sub"><button data-vf=""' + (!vtrFilter ? ' class="on"' : '') + '>すべて</button>' +
     data.statuses.map(st => '<button data-vf="' + esc(st) + '"' + (vtrFilter === st ? ' class="on"' : '') + '>' + esc(st) + '</button>').join('') + '</div>';
-  if (ME.level >= 1) html += '<div class="actions"><button class="btn ghost" id="vAdd">＋ VTRを追加</button></div>';
+  if (can('vtr')) html += '<div class="actions"><button class="btn ghost" id="vAdd">＋ VTRを追加</button></div>';
   const rows = data.rows.filter(r => (!vtrFilter || r.c['状態'] === vtrFilter) && (!q || hit(r, q))).slice().reverse();
   if (q) html += '<p class="hint">' + rows.length + '件見つかりました</p>';
   html += rows.length ? rows.map(r => vtrCard(r, data.year)).join('') : '<p class="empty">該当するVTRはありません。</p>';
@@ -1599,11 +1625,66 @@ $('mBody').addEventListener('click', e => {
     .catch(err => { toast('保存できませんでした：' + err.message); b.disabled = false; });
 }, true);
 
+// ---------- 管理者：役職と権限 ----------
+let PD = null;
+function loadPerms(){
+  $('permTable').innerHTML = '<p class="empty">読み込み中…</p>'; $('permMembers').innerHTML = '';
+  run('getPerms').then(d => { PD = d; renderPerms(); }).catch(e => { $('permTable').innerHTML = '<p class="empty">読み込めませんでした：' + esc(e.message) + '</p>'; });
+}
+function renderPerms(){
+  if (!PD) return;
+  $('permTable').innerHTML = '<div class="scroll"><table class="ptable"><tr><th>役職</th>' + PD.perms.map(p => '<th>' + esc(p.label) + '</th>').join('') + '<th></th></tr>' +
+    PD.roles.map((r, i) => '<tr><td>' + esc(r.name) + '</td>' + PD.perms.map(p =>
+      '<td><input type="checkbox" data-ri="' + i + '" data-k="' + p.k + '"' + (r.perms.includes(p.k) ? ' checked' : '') + '></td>').join('') +
+      '<td><button class="link" data-delrole="' + i + '" style="color:var(--live)">削除</button></td></tr>').join('') + '</table></div>' +
+    (PD.roles.length ? '' : '<p class="hint">役職がありません。下から追加してください。</p>');
+  $('permMembers').innerHTML = PD.members.map((m, i) => '<div class="mrow"><b>' + esc(m.name) + '</b><div class="pick">' +
+    (PD.roles.map(r => '<button data-mi="' + i + '" data-role="' + esc(r.name) + '"' + (m.roles.includes(r.name) ? ' class="on"' : '') + '>' + esc(r.name) + '</button>').join('') || '<span class="hint">役職がありません</span>') +
+    '</div></div>').join('');
+}
+$('permTable').onchange = e => {
+  const x = e.target; if (x.dataset.ri === undefined) return;
+  const r = PD.roles[+x.dataset.ri];
+  r.perms = x.checked ? r.perms.concat(x.dataset.k) : r.perms.filter(k => k !== x.dataset.k);
+};
+$('permTable').onclick = e => {
+  const b = e.target.closest('[data-delrole]'); if (!b) return;
+  const r = PD.roles[+b.dataset.delrole];
+  if (!confirm('役職「' + r.name + '」を削除しますか？ この役職が付いている人からも外れます（保存するまで反映されません）')) return;
+  PD.roles.splice(+b.dataset.delrole, 1);
+  PD.members.forEach(m => m.roles = m.roles.filter(x => x !== r.name));
+  renderPerms();
+};
+$('addRole').onclick = () => {
+  const n = $('newRole').value.trim();
+  if (!n) { toast('役職名を入れてください'); return; }
+  if (PD.roles.some(r => r.name === n)) { toast('同じ名前の役職があります'); return; }
+  PD.roles.push({ name: n, perms: [] }); $('newRole').value = ''; renderPerms();
+};
+$('permMembers').onclick = e => {
+  const b = e.target.closest('button[data-mi]'); if (!b) return;
+  const m = PD.members[+b.dataset.mi], n = b.dataset.role;
+  m.roles = m.roles.includes(n) ? m.roles.filter(x => x !== n) : m.roles.concat(n);
+  b.classList.toggle('on');
+};
+$('permSave').onclick = () => {
+  const me = PD.members.find(m => m.name === ME.name);
+  const keep = me && me.roles.some(n => (PD.roles.find(r => r.name === n) || { perms: [] }).perms.includes('perms'));
+  if (!keep && !confirm('この設定にすると、あなたは権限の管理ができなくなります。保存しますか？')) return;
+  const assign = {}; PD.members.forEach(m => assign[m.name] = m.roles);
+  const b = $('permSave'); b.disabled = true;
+  run('savePerms', PD.roles, assign).then(d => {
+    PD = d; renderPerms(); toast('権限の設定を保存しました');
+    // 自分の権限も変わっているかもしれないので、読み込み直す
+    run('boot').then(x => { applyBoot(x); saveBoot(); if (!can('admin')) location.hash = '#home'; else renderAdmin(); });
+  }).catch(err => toast('保存できませんでした：' + err.message)).finally(() => { b.disabled = false; });
+};
+
 $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrollIntoView({ behavior: 'smooth' }); };
 
 // ---------- バージョンと更新のお知らせ ----------
 // 更新するたびに、この番号を上げる
-const APP_VERSION = '1.7';
+const APP_VERSION = '1.8';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
