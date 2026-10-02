@@ -765,7 +765,7 @@ function renderAllFree(name, free){
     });
   } else {
     $('allFree').innerHTML = gridHtml(c => '<div class="fcell">' + done.filter(n => free[n].includes(c)).map(n =>
-      '<span class="fn' + (n === name ? ' me' : '') + '" style="background:' + chipBg(n) + '">' + esc(n) + '</span>').join('') + '</div>')
+      '<span class="fn' + (n === name ? ' me' : '') + '" style="background:' + chipBg(n) + '" title="' + esc(n) + '">' + esc(infoOf(n).short || n) + '</span>').join('') + '</div>')
       .replace('<table class="fgrid">', '<table class="fgrid names">');
   }
 
