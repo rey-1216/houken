@@ -74,6 +74,12 @@ header .bar-in{display:flex;align-items:center;gap:10px;min-height:28px}
 .acard .big{display:block;font-size:17px;font-weight:800;margin:2px 0}
 .acard.live{border-left-color:var(--live)} .acard.ev{border-left-color:var(--event)} .acard.alert{border-left-color:var(--late)}
 .chips.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0;margin-bottom:4px;border-bottom:1px solid var(--line)}
+.pick{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.pick button{font:inherit;font-size:13px;font-weight:700;padding:5px 10px;border-radius:99px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+.pick button.on{background:var(--pick);border-color:var(--pick);color:#fff}
+.pw{position:relative;display:block}
+.pw input{padding-right:64px}
+.pw .eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);margin-top:3px;border:0;background:none;color:var(--pick);font:inherit;font-size:13px;font-weight:700;padding:6px;cursor:pointer}
 .mybox{margin-top:28px;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:10px 12px}
 .mybox summary{font-weight:800;cursor:pointer;padding:4px 0}
 .ver{text-align:center;color:var(--sub);font-size:12px;padding:28px 0 8px}
@@ -247,6 +253,13 @@ td small{color:var(--sub);margin-left:3px}
           <button class="btn ghost" id="remAtt">出欠の未回答者にリマインド</button>
           <button class="btn ghost" id="remFree">空きコマ未登録者にリマインド</button>
         </div>
+        <h2>個人に送る</h2>
+        <p class="hint">送る相手をタップして選んでください（複数OK）。本文の最後に送り主の名前が付きます。</p>
+        <div class="pick" id="dmPick"></div>
+        <div class="actions"><button class="link" id="dmClear">選択をすべて外す</button></div>
+        <input id="dmTitle" maxlength="50" placeholder="タイトル（例：撮影の件）">
+        <textarea id="dmBody" rows="3" maxlength="300" placeholder="本文"></textarea>
+        <div class="actions"><button class="btn" id="dmSend">選んだ人に送る</button></div>
         <div id="bcSec">
           <h2>全員へのお知らせ</h2>
           <input id="bcTitle" maxlength="50" placeholder="タイトル（例：明日の部会について）">
@@ -304,7 +317,7 @@ function fmt(k){ const [y,m,d] = k.split('-').map(Number); return m + '/' + d + 
 function addDays(k,n){ const [y,m,d] = k.split('-').map(Number); const t = new Date(y,m-1,d+n);
   return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'); }
 // サーバー（Apps Script）とのやりとり
-const ARGS = { login: ['sid','pass'], setPassword: ['sid','current','next'], boot: [], saveMine: ['name','map','notes'], saveFree: ['name','slots'], getAdmin: [],
+const ARGS = { sendTo: ['names','title','body'], login: ['sid','pass'], setPassword: ['sid','current','next'], boot: [], saveMine: ['name','map','notes'], saveFree: ['name','slots'], getAdmin: [],
   setActual: ['date','name','actual'], setLineup: ['date','items'], broadcast: ['title','body'], remindNow: ['kind'] };
 // ログイン情報（この端末に保存）
 let TOKEN = (() => { try { return localStorage.getItem('token') || ''; } catch(e){ return ''; } })();
@@ -484,7 +497,8 @@ function loggedOut(){
 // ログイン成功後
 function signedIn(r){
   setToken(r.token);
-  ['lgPass','pwNow','pwNew','pwNew2'].forEach(id => $(id).value = '');
+  ['lgPass','pwNow','pwNew','pwNew2'].forEach(id => { $(id).value = ''; $(id).type = 'password'; });
+  document.querySelectorAll('.pw .eye').forEach(b => b.textContent = '表示');
   $('loginForm').hidden = true; $('pwForm').hidden = true; $('homeBody').hidden = false;
   // ログインの返事にデータが入っているので、すぐ表示する
   if (r.boot) { applyBoot(r.boot); saveBoot(); syncPushUser(); }
@@ -642,7 +656,7 @@ function renderAdmin(){
   liveSel = next ? next.date : '';
   loadEdit(); renderLive();
   $('bcSec').hidden = admin.level < 2; // お知らせの送信は幹部だけ
-  renderAdminSum(); showTab(adminTab);
+  renderAdminSum(); showTab(adminTab); renderDmPick();
   $('proxyWho').innerHTML = '<option value="">部員を選ぶ</option>' + admin.members.map(n => '<option>' + esc(n) + '</option>').join('');
   proxyEdit = null; renderProxy();
 }
@@ -1128,11 +1142,51 @@ $('adminSum').onclick = e => {
   $('adminTabs').scrollIntoView({ behavior: 'smooth' });
 };
 
+// ---------- 管理者：個人宛の通知 ----------
+const dmSel = new Set();
+function renderDmPick(){
+  if (!admin) return;
+  $('dmPick').innerHTML = admin.members.map(n => '<button data-n="' + esc(n) + '"' + (dmSel.has(n) ? ' class="on"' : '') + '>' + esc(n) + '</button>').join('');
+  $('dmSend').textContent = dmSel.size ? '選んだ ' + dmSel.size + '人に送る' : '選んだ人に送る';
+}
+$('dmPick').onclick = e => {
+  const b = e.target.closest('button[data-n]'); if (!b) return;
+  const n = b.dataset.n; dmSel.has(n) ? dmSel.delete(n) : dmSel.add(n);
+  renderDmPick();
+};
+$('dmClear').onclick = () => { dmSel.clear(); renderDmPick(); };
+$('dmSend').onclick = () => {
+  const title = $('dmTitle').value.trim(), body = $('dmBody').value.trim();
+  if (!dmSel.size) { toast('送る相手を選んでください'); return; }
+  if (!body) { toast('本文を入れてください'); return; }
+  if (!confirm([...dmSel].join('、') + ' に送ります。よろしいですか？')) return;
+  const b = $('dmSend'); b.disabled = true;
+  run('sendTo', [...dmSel], title, body).then(r => {
+    toast(r.noLogin ? r.sent + '人に送りました（まだログインしていない ' + r.noLogin + '人には届きません）' : r.sent + '人に送りました');
+    $('dmTitle').value = ''; $('dmBody').value = ''; dmSel.clear(); renderDmPick();
+  }).catch(err => toast('送れませんでした：' + err.message)).finally(() => { b.disabled = false; });
+};
+
+// ---------- パスワードの表示・非表示 ----------
+document.querySelectorAll('input[type=password]').forEach(inp => {
+  const wrap = document.createElement('span'); wrap.className = 'pw';
+  inp.parentNode.insertBefore(wrap, inp); wrap.appendChild(inp);
+  const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'eye'; btn.textContent = '表示';
+  btn.onclick = e => {
+    e.preventDefault();
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    btn.textContent = show ? '隠す' : '表示';
+    inp.focus();
+  };
+  wrap.appendChild(btn);
+});
+
 $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrollIntoView({ behavior: 'smooth' }); };
 
 // ---------- バージョンと更新のお知らせ ----------
 // 更新するたびに、この番号を上げる
-const APP_VERSION = '1.1';
+const APP_VERSION = '1.2';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
