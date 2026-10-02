@@ -183,6 +183,10 @@ td small{color:var(--sub);margin-left:3px}
       <h2>役職の経験</h2>
       <p class="hint">数字は担当した回数です。補佐は「補」として別に表示し、経験の回数には入れていません。出席率は、生放送で役職か補佐に入った回の割合です。</p>
       <div id="exp"></div>
+      <h2>空きコマの代理登録</h2>
+      <p class="hint">部員を選んで、その人の空きコマを登録・修正できます。</p>
+      <select id="proxyWho"></select>
+      <div id="proxyFree"></div>
     </div>
   </section>
 </main>
@@ -479,6 +483,8 @@ function renderAdmin(){
   const next = lives.find(d => d.date >= admin.today) || lives[lives.length - 1];
   liveSel = next ? next.date : '';
   loadEdit(); renderLive(); renderExp();
+  $('proxyWho').innerHTML = '<option value="">部員を選ぶ</option>' + admin.members.map(n => '<option>' + esc(n) + '</option>').join('');
+  proxyEdit = null; renderProxy();
 }
 
 function renderChips(){
@@ -734,6 +740,36 @@ $('allFree').onclick = e => {
   const b = e.target.closest('button[data-s]'); if (!b) return;
   freeSel = freeSel === b.dataset.s ? '' : b.dataset.s;
   renderFree();
+};
+
+// ---------- 空きコマの代理登録（役職者） ----------
+let proxyEdit = null;
+function renderProxy(){
+  const n = $('proxyWho').value, box = $('proxyFree');
+  if (!n) { box.innerHTML = ''; return; }
+  const saved = freeAll()[n] || [];
+  if (!proxyEdit) proxyEdit = new Set(saved);
+  const changed = !sameSet(proxyEdit, saved);
+  box.innerHTML = gridHtml(c => '<button data-f="' + c + '"' + (proxyEdit.has(c) ? ' class="on"' : '') + '>' + (proxyEdit.has(c) ? '空き' : '') + '</button>') +
+    '<div class="actions"><button class="btn" id="proxySave"' + (changed ? '' : ' disabled') + '>' + esc(n) + ' さんの空きコマを保存</button>' +
+    (freeAll()[n] ? '' : '<span class="hint">まだ登録されていません</span>') + '</div>';
+}
+$('proxyWho').onchange = () => { proxyEdit = null; renderProxy(); };
+$('proxyFree').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.f) {
+    const c = b.dataset.f;
+    proxyEdit.has(c) ? proxyEdit.delete(c) : proxyEdit.add(c);
+    renderProxy(); return;
+  }
+  if (b.id !== 'proxySave') return;
+  const name = $('proxyWho').value, slots = FD.flatMap(d => FK.map(k => d + k)).filter(c => proxyEdit.has(c));
+  b.disabled = true; b.textContent = '保存中…';
+  run('saveFree', name, slots).then(() => {
+    BOOT.free = BOOT.free || {}; BOOT.free[name] = slots; saveBoot();
+    if (name === $('who').value) myFreeEdit = null;
+    renderProxy(); toast(name + ' さんの空きコマを保存しました');
+  }).catch(err => { b.disabled = false; b.textContent = name + ' さんの空きコマを保存'; toast('保存できませんでした：' + err.message); });
 };
 
 show();
