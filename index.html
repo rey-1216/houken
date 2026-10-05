@@ -101,6 +101,23 @@ header .bar-in{display:flex;align-items:center;gap:10px;min-height:28px}
 .mrow{padding:8px 0;border-bottom:1px solid var(--line)} .mrow b{display:block;font-size:14px}
 .pick.extra button{font-size:12px;padding:3px 8px;border-style:dashed}
 .pick.extra button.on{background:var(--event);border-color:var(--event);border-style:solid}
+.calhead{display:flex;align-items:center;gap:10px;margin:2px 0 6px}
+.calhead b{font-size:18px;min-width:8em;text-align:center}
+.calhead .btn{padding:6px 14px}
+.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.calgrid .wd{text-align:center;font-size:12px;font-weight:700;color:var(--sub);padding:2px 0}
+.cd{min-height:68px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:2px 3px;cursor:pointer;overflow:hidden;text-align:left;font:inherit;color:var(--ink)}
+.cd .n{font-size:12px;font-weight:800;display:inline-block;min-width:1.6em;text-align:center}
+.cd.out{opacity:.35} .cd.sun .n{color:var(--live)} .cd.sat .n{color:var(--pick)}
+.cd.today .n{background:var(--live);color:#fff;border-radius:99px}
+.cd.sel{outline:3px solid var(--pick);outline-offset:-1px}
+.ce{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:3px;padding:0 3px;margin-top:2px;color:#fff;font-size:10px;font-weight:700;line-height:1.55}
+.ce.mine{box-shadow:inset 0 0 0 2px var(--ink)}
+.more{font-size:10px;color:var(--sub)}
+.c-bu{background:var(--pick)} .c-live{background:var(--live)} .c-ev{background:var(--event)} .c-prep{background:var(--prep)} .c-shoot{background:var(--vtr)} .c-due{background:var(--late)}
+.legend.cal span::before{background:var(--c)}
+.dayev{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line)}
+.dayev .ce{display:inline-block;flex:none;font-size:11px;margin:2px 0 0}
 .mybox{margin-top:28px;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:10px 12px}
 .mybox summary{font-weight:800;cursor:pointer;padding:4px 0}
 .ver{text-align:center;color:var(--sub);font-size:12px;padding:28px 0 8px}
@@ -210,6 +227,7 @@ td small{color:var(--sub);margin-left:3px}
     <div id="pushBox" class="sum push"></div>
     <div class="menu">
       <button data-go="me">出欠を回答<span id="meBadge"></span></button>
+      <button data-go="cal">カレンダー</button>
       <button data-go="vtr">VTR<span id="vtrBadge"></span></button>
       <button data-go="work" hidden>仕事分担<span id="workBadge"></span></button>
       <button data-go="lineups">生放送の役職表</button>
@@ -224,6 +242,19 @@ td small{color:var(--sub);margin-left:3px}
     <h2>役職の経験</h2>
     <p class="hint">数字は担当した回数です。補佐は「補」として別に表示し、経験の回数には入れていません。</p>
     <div id="exp"></div>
+  </section>
+
+  <section id="cal" hidden>
+    <div class="calhead">
+      <button class="btn ghost" id="calPrev">‹</button>
+      <b id="calTitle"></b>
+      <button class="btn ghost" id="calNext">›</button>
+      <button class="link" id="calToday">今日</button>
+    </div>
+    <label class="hint" style="display:flex;gap:8px;align-items:center;margin:4px 0 8px"><input type="checkbox" id="calMine" style="width:auto;margin:0">VTRは自分の担当だけ表示</label>
+    <div class="legend" id="calLegend"></div>
+    <div class="calgrid" id="calGrid"></div>
+    <div id="calDay"></div>
   </section>
 
   <section id="vtr" hidden>
@@ -428,7 +459,7 @@ function toggle(kind, cur, t){
 }
 
 // ---------- 画面の切り替え ----------
-const VIEWS = { home: '', me: '出欠を回答', vtr: 'VTR', work: '仕事分担', lineups: '生放送の役職表', free: '空きコマ', admin: '管理者' };
+const VIEWS = { home: '', me: '出欠を回答', cal: 'カレンダー', vtr: 'VTR', work: '仕事分担', lineups: '生放送の役職表', free: '空きコマ', admin: '管理者' };
 let view = 'home';
 function show(){
   view = (location.hash || '#home').slice(1);
@@ -438,7 +469,7 @@ function show(){
   $('back').hidden = view === 'home';
   $('brand').hidden = view !== 'home';
   $('viewTitle').textContent = VIEWS[view];
-  document.body.classList.toggle('wide', view === 'free');
+  document.body.classList.toggle('wide', view === 'free' || view === 'cal');
   if (view === 'home') renderHome();
   if (view === 'lineups') renderLineups();
   if (view === 'free') {
@@ -447,8 +478,9 @@ function show(){
     $('myFreeBox').open = !!(ME && !freeAll()[ME.name]);
   }
   if (view === 'me') renderMine();
-  if (view === 'work') renderWork(); if (view === 'vtr') renderVtr();
+  if (view === 'work') renderWork(); if (view === 'vtr') renderVtr(); if (view === 'cal') renderCal();
   if (view === 'vtr') renderVtr();
+  if (view === 'cal') renderCal();
   if (view === 'admin') loadAdmin();
   if (view === 'lineups') renderExp();
   updateBar();
@@ -988,8 +1020,8 @@ function renderFree(){
 
 // ---------- みんなの空きコマ（4つの表示） ----------
 const GCOL = { '機材': '#2B6CD8', '美術': '#E07A1F', 'テロップ': '#1E9A5A' };
-const MODES = { count: '人数', all: '全員', group: '班別', grade: '学年別' };
-let freeMode = 'all', freeGroup = '', freeGrade = ''; // 最初は「全員」
+const MODES = { all: '全員', count: '人数', filter: '班・学年', one: '1人' };
+let freeMode = 'all', freeGroup = '', freeGrade = '', freeOne = ''; // 最初は「全員」。班・学年は空＝すべて
 const infoOf = n => ((BOOT && BOOT.info) || {})[n] || { groups: [], grade: '' };
 function chipBg(n){
   const cs = infoOf(n).groups.map(g => GCOL[g] || '#8A93A3');
@@ -1004,16 +1036,40 @@ function renderAllFree(name, free){
   const groups = Object.keys(GCOL).concat([...new Set(all.flatMap(n => infoOf(n).groups))].filter(g => !GCOL[g]));
   const grades = [...new Set(all.map(n => infoOf(n).grade).filter(g => g))].sort();
   $('freeModes').innerHTML = Object.keys(MODES).map(m => '<button data-m="' + m + '"' + (m === freeMode ? ' class="on"' : '') + '>' + MODES[m] + '</button>').join('');
-  let subs = [];
-  if (freeMode === 'group') { if (!groups.includes(freeGroup)) freeGroup = groups[0] || ''; subs = groups.map(g => [g, g + '班', g === freeGroup]); }
-  if (freeMode === 'grade') { if (!grades.includes(freeGrade)) freeGrade = grades[0] || ''; subs = grades.map(g => [g, g + '年', g === freeGrade]); }
-  $('freeSubs').innerHTML = subs.map(([v, l, on]) => '<button data-v="' + esc(v) + '"' + (on ? ' class="on"' : '') + '>' + esc(l) + '</button>').join('');
-  $('freeSubs').hidden = !subs.length;
+  // 切り替えの下の段：班・学年なら2段のボタン、1人なら部員の選択
+  const row = (attr, cur, list) => '<div class="chips sub">' + list.map(([v, l]) =>
+    '<button data-' + attr + '="' + esc(v) + '"' + (v === cur ? ' class="on"' : '') + '>' + esc(l) + '</button>').join('') + '</div>';
+  if (freeMode === 'filter') {
+    if (freeGroup && !groups.includes(freeGroup)) freeGroup = '';
+    if (freeGrade && !grades.includes(freeGrade)) freeGrade = '';
+    $('freeSubs').innerHTML = row('fg', freeGroup, [['', '全部の班']].concat(groups.map(g => [g, g + '班']))) +
+      row('fy', freeGrade, [['', '全学年']].concat(grades.map(g => [g, g + '年'])));
+  } else if (freeMode === 'one') {
+    $('freeSubs').innerHTML = '<select id="freeOneSel" style="margin:4px 0"><option value="">部員を選んでください</option>' +
+      all.map(n => '<option' + (n === freeOne ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select>';
+  } else {
+    $('freeSubs').innerHTML = '';
+  }
+  $('freeSubs').hidden = !$('freeSubs').innerHTML;
+  $('freeSubs').style.display = $('freeSubs').hidden ? '' : 'block';
+
+  // 1人：選んだ人の空きコマだけ
+  if (freeMode === 'one') {
+    $('freeLegend').innerHTML = '';
+    if (!freeOne) { $('allFree').innerHTML = '<p class="empty">上で部員を選ぶと、その人の空きコマが表示されます。</p>'; $('freeNames').innerHTML = ''; return; }
+    const inf = infoOf(freeOne), slots = free[freeOne];
+    $('freeNames').innerHTML = '';
+    $('allFree').innerHTML = '<p class="hint"><b>' + esc(freeOne) + '</b>' +
+      [inf.groups.length ? inf.groups.map(g => g + '班').join('・') : '', inf.grade ? inf.grade + '年' : ''].filter(x => x).map(x => '　' + esc(x)).join('') +
+      (slots ? '　空き ' + slots.length + 'コマ' : '') + '</p>' +
+      (slots ? gridHtml(c => '<button' + (slots.includes(c) ? ' class="on"' : '') + ' style="cursor:default">' + (slots.includes(c) ? '空き' : '') + '</button>')
+        : '<p class="empty">この人はまだ空きコマを登録していません。</p>');
+    return;
+  }
 
   // 対象の人
   let pool = all;
-  if (freeMode === 'group') pool = all.filter(n => infoOf(n).groups.includes(freeGroup));
-  if (freeMode === 'grade') pool = all.filter(n => infoOf(n).grade === freeGrade);
+  if (freeMode === 'filter') pool = all.filter(n => (!freeGroup || infoOf(n).groups.includes(freeGroup)) && (!freeGrade || infoOf(n).grade === freeGrade));
   const done = pool.filter(n => free[n]);
   const yet = pool.filter(n => !free[n]);
 
@@ -1049,10 +1105,13 @@ function renderAllFree(name, free){
 
 $('freeModes').onclick = e => { const b = e.target.closest('button[data-m]'); if (!b) return; freeMode = b.dataset.m; renderFree(); };
 $('freeSubs').onclick = e => {
-  const b = e.target.closest('button[data-v]'); if (!b) return;
-  if (freeMode === 'group') freeGroup = b.dataset.v; else freeGrade = b.dataset.v;
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.fg !== undefined) freeGroup = b.dataset.fg;
+  else if (b.dataset.fy !== undefined) freeGrade = b.dataset.fy;
+  else return;
   renderFree();
 };
+$('freeSubs').onchange = e => { if (e.target.id === 'freeOneSel') { freeOne = e.target.value; renderFree(); } };
 
 $('myFree').onclick = e => {
   const b = e.target.closest('button'); if (!b) return;
@@ -1737,6 +1796,104 @@ $('permSave').onclick = () => {
   }).catch(err => toast('保存できませんでした：' + err.message)).finally(() => { b.disabled = false; });
 };
 
+// ---------- カレンダー ----------
+const CAL_TYPES = [
+  { t: '部会', cls: 'c-bu' }, { t: '生放送', cls: 'c-live' }, { t: 'イベント', cls: 'c-ev' },
+  { t: '準備', cls: 'c-prep' }, { t: '撮影', cls: 'c-shoot' }, { t: '締め切り', cls: 'c-due' }
+];
+let calY = 0, calM = 0, calSel = '';
+function ymd(y, m, d){ return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0'); }
+
+// 日付ごとの予定をまとめる
+function calEvents(){
+  const ev = {}, onlyMine = $('calMine').checked;
+  const add = (date, e) => (ev[date] = ev[date] || []).push(e);
+  (BOOT.calDays || BOOT.days || []).forEach(d => {
+    if (d.kind === '部会') add(d.date, { t: '部会', label: '部会', day: d });
+    if (d.live) add(d.date, { t: '生放送', label: '生放送', day: d });
+    if (d.kind === 'イベント') add(d.date, { t: 'イベント', label: d.prepFor || d.memo || 'イベント', day: d });
+    if (d.kind === '準備') add(d.date, { t: '準備', label: (d.prepFor || 'イベント') + ' 準備', day: d });
+  });
+  const v = BOOT.vtr;
+  if (v) v.rows.forEach(r => {
+    const roles = vtrRoles(r.c), title = r.c['特集タイトル'];
+    const sd = jDate(r.c['撮影日'], v.year), mineShoot = roles.includes('撮影') || roles.includes('アポ取り');
+    if (sd && (!onlyMine || mineShoot)) add(sd, { t: '撮影', label: title, mine: mineShoot, row: r });
+    const dd = jDate(r.c['締め切り'], v.year), mineDue = roles.includes('編集') || roles.includes('補佐');
+    if (dd && !vtrDone(r.c) && (!onlyMine || mineDue)) add(dd, { t: '締め切り', label: title, mine: mineDue, row: r });
+  });
+  return ev;
+}
+const calCls = t => (CAL_TYPES.find(x => x.t === t) || {}).cls || 'c-bu';
+
+function renderCal(){
+  if (!BOOT || !ME) return;
+  const today = todayKey();
+  if (!calY) { const [y, m] = today.split('-').map(Number); calY = y; calM = m; }
+  if (!calSel) calSel = today;
+  $('calTitle').textContent = calY + '年' + calM + '月';
+  $('calLegend').className = 'legend cal';
+  $('calLegend').innerHTML = CAL_TYPES.map(x => '<span style="--c:var(--' + { 'c-bu': 'pick', 'c-live': 'live', 'c-ev': 'event', 'c-prep': 'prep', 'c-shoot': 'vtr', 'c-due': 'late' }[x.cls] + ')">' + x.t + '</span>').join('');
+  const ev = calEvents();
+  // 日曜始まり。前後の月の日も埋める
+  const first = new Date(calY, calM - 1, 1), start = new Date(calY, calM - 1, 1 - first.getDay());
+  let html = W.split('').map(w => '<div class="wd">' + w + '</div>').join('');
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    if (i >= 35 && d.getMonth() !== calM - 1) break;
+    const k = ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()), list = ev[k] || [];
+    const cls = ['cd', d.getMonth() !== calM - 1 ? 'out' : '', d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : '', k === today ? 'today' : '', k === calSel ? 'sel' : ''].join(' ');
+    html += '<button class="' + cls + '" data-cd="' + k + '"><span class="n">' + d.getDate() + '</span>' +
+      list.slice(0, 3).map(e => '<span class="ce ' + calCls(e.t) + (e.mine ? ' mine' : '') + '">' + esc(e.label) + '</span>').join('') +
+      (list.length > 3 ? '<span class="more">ほか' + (list.length - 3) + '件</span>' : '') + '</button>';
+  }
+  $('calGrid').innerHTML = html;
+  renderCalDay(ev);
+}
+
+// 選んだ日の予定
+function renderCalDay(ev){
+  const list = ev[calSel] || [];
+  let html = '<h2>' + fmt(calSel) + ' の予定</h2>';
+  if (!list.length) { $('calDay').innerHTML = html + '<p class="empty">予定はありません。</p>'; return; }
+  html += list.map(e => {
+    let body = '<b>' + esc(e.label) + '</b>';
+    if (e.day) {
+      if (e.day.memo && e.t !== 'イベント') body += '<div class="hint">' + esc(e.day.memo) + '</div>';
+      if (e.t !== '生放送' || e.day.kind === '部会') {
+        const a = (BOOT.plans || {})[e.day.date + '|' + ME.name];
+        if (e.t !== '生放送' && e.day.date >= todayKey()) {
+          body += '<div class="hint">' + (a ? 'あなたの回答：' + esc(a.replace(/,/g, '・')) : '<span class="warn">まだ出欠を回答していません</span>') +
+            '　<a href="#me">出欠を回答</a></div>';
+        }
+      }
+      if (e.t === '生放送') {
+        const rows = ((BOOT.lineups || {})[e.day.date] || []).filter(r => r.name === ME.name);
+        if (rows.length) body += '<div class="hint">あなたの役職：' + rows.map(r => esc(r.role) + (r.slot === '補佐' ? '（補佐）' : '')).join('・') + '</div>';
+      }
+    } else if (e.row) {
+      const c = e.row.c;
+      if (e.t === '撮影') body += '<div class="hint">' + [c['時間'] && '時間：' + esc(c['時間']), c['撮影者'] && '撮影者：' + esc(c['撮影者']), c['アポ取り'] && 'アポ取り：' + esc(c['アポ取り'])].filter(x => x).join('　') + '</div>';
+      if (e.t === '締め切り') body += '<div class="hint">' + [c['編集者'] && '編集：' + esc(c['編集者']), c['補佐'] && '補佐：' + esc(c['補佐']), c['状態'] && '状態：' + esc(c['状態'])].filter(x => x).join('　') + '</div>';
+      if (e.mine) body += '<div class="hint" style="color:var(--vtr);font-weight:700">あなたの担当です</div>';
+    }
+    return '<div class="dayev"><span class="ce ' + calCls(e.t) + '">' + e.t + '</span><div>' + body + '</div></div>';
+  }).join('');
+  $('calDay').innerHTML = html;
+}
+
+$('calGrid').onclick = e => {
+  const b = e.target.closest('[data-cd]'); if (!b) return;
+  calSel = b.dataset.cd;
+  const [y, m] = calSel.split('-').map(Number);
+  if (y !== calY || m !== calM) { calY = y; calM = m; }
+  renderCal();
+};
+$('calPrev').onclick = () => { calM--; if (calM < 1) { calM = 12; calY--; } renderCal(); };
+$('calNext').onclick = () => { calM++; if (calM > 12) { calM = 1; calY++; } renderCal(); };
+$('calToday').onclick = () => { calY = 0; calSel = ''; renderCal(); };
+$('calMine').onchange = () => renderCal();
+
 $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrollIntoView({ behavior: 'smooth' }); };
 
 // ---------- バージョンと更新のお知らせ ----------
@@ -1745,8 +1902,8 @@ $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrol
 //   小さな改善               … 小数点の次を上げる（9.0 → 9.1）
 //   不具合の修正だけ          … もう1つ下を上げる（9.1 → 9.1.1）
 // これまでの大きな機能：1 出欠 / 2 生放送の役職表 / 3 空きコマ / 4 通知 /
-//                       5 ログイン / 6 管理者画面 / 7 VTR / 8 権限の管理
-const APP_VERSION = '8.3';
+//                       5 ログイン / 6 管理者画面 / 7 VTR / 8 権限の管理 / 9 カレンダー
+const APP_VERSION = '9.1';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
