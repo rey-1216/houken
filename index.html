@@ -18,14 +18,14 @@
 :root{
   --bg:#EEF1F5; --panel:#FFFFFF; --ink:#18202C; --sub:#5C6778; --line:#D5DBE3;
   --live:#E0362C; --event:#5B43C9; --prep:#B97A0A; --pick:#2B5FB8;
-  --ok:#1E8A5A; --late:#C27C0E; --no:#8A93A3; --tbd:#9AA3B2;
+  --ok:#1E8A5A; --late:#C27C0E; --no:#8A93A3; --tbd:#9AA3B2; --vtr:#0E8A8A;
   --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,sans-serif;
 }
 @media (prefers-color-scheme:dark){
   :root{
     --bg:#121722; --panel:#1B2230; --ink:#E7EBF2; --sub:#9AA5B8; --line:#2E3747;
     --live:#FF5A4E; --event:#9C87FF; --prep:#E3A73A; --pick:#6C9BEF;
-    --ok:#45C08A; --late:#E8A43A; --no:#7E889A; --tbd:#6E788A;
+    --ok:#45C08A; --late:#E8A43A; --no:#7E889A; --tbd:#6E788A; --vtr:#3CC4C4;
   }
 }
 *{box-sizing:border-box}
@@ -485,7 +485,7 @@ function renderHome(){
   const myV = myVtrs();
   if (myV.length) {
     const v = myV[0];
-    html += '<div class="sum" style="border-left-color:var(--event)"><b>自分のVTR ' + myV.length + '件</b>' +
+    html += '<div class="sum" style="border-left-color:var(--vtr)"><b>自分のVTR ' + myV.length + '件</b>' +
       (v.due ? '次の締め切り：<span class="due ' + vtrDueCls(v) + '">' + fmt(v.due) + '</span> ' : '') + esc(v.row.c['特集タイトル']) + '</div>';
   }
   const urgentV = myV.filter(v => vtrDueCls(v)).length;
@@ -1490,7 +1490,7 @@ function vtrCard(r, year, showYear){
   const extra = Object.keys(c).filter(h => !VTR_SHOWN.includes(h) && c[h]).map(h => line(h, c[h]));
   return '<div class="task"><div class="t1">' + (showYear ? '<span class="tag">' + esc(year) + '</span>' : '') + '<span class="ttl">' + esc(c['特集タイトル']) + '</span>' +
     (c['状態'] ? '<span class="st ' + (done ? 's-完了' : /編集中/.test(c['状態']) ? 's-進行中' : '') + '">' + esc(c['状態']) + '</span>' : '') +
-    (roles.length ? '<span class="tag" style="border-color:var(--event);color:var(--event)">あなた：' + roles.join('・') + '</span>' : '') + '</div>' +
+    (roles.length ? '<span class="tag" style="border-color:var(--vtr);color:var(--vtr)">あなた：' + roles.join('・') + '</span>' : '') + '</div>' +
     '<div class="hint">' + join([line('尺', c['V尺']), line('編集', c['編集者']), line('補佐', c['補佐'])]) + '</div>' +
     '<div class="hint">' + join([line('締め切り', c['締め切り'], dc), line('生放送', c['生放送']), line('CATV', c['CATV'])]) + '</div>' +
     ((c['撮影日'] || c['撮影者'] || c['アポ取り'] || c['アポ状況']) ? '<div class="hint">' + join([line('撮影', [c['撮影日'], c['時間']].filter(x => x).join(' ')), line('撮影者', c['撮影者']), line('アポ取り', c['アポ取り']) + aponHtml(c['アポ状況'])]) + '</div>' : '') +
@@ -1529,8 +1529,8 @@ function renderVtr(){
     const list = latest.rows.map(r => ({ r: r, d: jDate(r.c['撮影日'], latest.year) })).filter(x => x.d && x.d >= today).sort((a, b) => a.d < b.d ? -1 : 1);
     box.innerHTML = list.length ? list.map(x => {
       const c = x.r.c, mine = vtrRoles(c).includes('撮影');
-      return '<div class="task"' + (mine ? ' style="border-color:var(--event)"' : '') + '><div class="t1"><span class="ttl">' + fmt(x.d) + (c['時間'] ? ' ' + esc(c['時間']) : '') + '</span>' +
-        '<span>' + esc(c['特集タイトル']) + '</span>' + (mine ? '<span class="tag" style="border-color:var(--event);color:var(--event)">あなたも撮影</span>' : '') + '</div>' +
+      return '<div class="task"' + (mine ? ' style="border-color:var(--vtr)"' : '') + '><div class="t1"><span class="ttl">' + fmt(x.d) + (c['時間'] ? ' ' + esc(c['時間']) : '') + '</span>' +
+        '<span>' + esc(c['特集タイトル']) + '</span>' + (mine ? '<span class="tag" style="border-color:var(--vtr);color:var(--vtr)">あなたも撮影</span>' : '') + '</div>' +
         '<div class="hint">撮影者：' + esc(c['撮影者'] || '未定') + '</div></div>';
     }).join('') : '<p class="empty">これからの撮影予定はありません。</p>';
     return;
@@ -1733,7 +1733,7 @@ $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrol
 //   不具合の修正だけ          … もう1つ下を上げる（9.1 → 9.1.1）
 // これまでの大きな機能：1 出欠 / 2 生放送の役職表 / 3 空きコマ / 4 通知 /
 //                       5 ログイン / 6 管理者画面 / 7 VTR / 8 権限の管理
-const APP_VERSION = '8.0';
+const APP_VERSION = '8.1';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
