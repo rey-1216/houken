@@ -30,6 +30,8 @@
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
+/* バッジやタグの中では改行しない（足りなければバッジごと次の行へ） */
+.st,.tag,.badge{display:inline-block;white-space:nowrap}
 html{touch-action:manipulation}
 body.wide main{max-width:1180px}
 .fgrid.names{border-spacing:3px}
@@ -1725,8 +1727,13 @@ $('permSave').onclick = () => {
 $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrollIntoView({ behavior: 'smooth' }); };
 
 // ---------- バージョンと更新のお知らせ ----------
-// 更新するたびに、この番号を上げる
-const APP_VERSION = '1.9';
+// 更新するたびに、この番号を上げる（iOSと同じルール）
+//   新しい機能を追加したとき … 1の位を上げる（8.0 → 9.0）
+//   小さな改善               … 小数点の次を上げる（9.0 → 9.1）
+//   不具合の修正だけ          … もう1つ下を上げる（9.1 → 9.1.1）
+// これまでの大きな機能：1 出欠 / 2 生放送の役職表 / 3 空きコマ / 4 通知 /
+//                       5 ログイン / 6 管理者画面 / 7 VTR / 8 権限の管理
+const APP_VERSION = '8.0';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
