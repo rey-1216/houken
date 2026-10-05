@@ -18,14 +18,14 @@
 :root{
   --bg:#EEF1F5; --panel:#FFFFFF; --ink:#18202C; --sub:#5C6778; --line:#D5DBE3;
   --live:#E0362C; --event:#5B43C9; --prep:#B97A0A; --pick:#2B5FB8;
-  --ok:#1E8A5A; --late:#C27C0E; --no:#8A93A3; --tbd:#9AA3B2; --vtr:#0E8A8A;
+  --ok:#1E8A5A; --late:#C27C0E; --no:#8A93A3; --tbd:#9AA3B2; --vtr:#0E8A8A; --due:#C2255C;
   --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,sans-serif;
 }
 @media (prefers-color-scheme:dark){
   :root{
     --bg:#121722; --panel:#1B2230; --ink:#E7EBF2; --sub:#9AA5B8; --line:#2E3747;
     --live:#FF5A4E; --event:#9C87FF; --prep:#E3A73A; --pick:#6C9BEF;
-    --ok:#45C08A; --late:#E8A43A; --no:#7E889A; --tbd:#6E788A; --vtr:#3CC4C4;
+    --ok:#45C08A; --late:#E8A43A; --no:#7E889A; --tbd:#6E788A; --vtr:#3CC4C4; --due:#F06595;
   }
 }
 *{box-sizing:border-box}
@@ -114,7 +114,7 @@ header .bar-in{display:flex;align-items:center;gap:10px;min-height:28px}
 .ce{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:3px;padding:0 3px;margin-top:2px;color:#fff;font-size:10px;font-weight:700;line-height:1.55}
 .ce.mine{box-shadow:inset 0 0 0 2px var(--ink)}
 .more{font-size:10px;color:var(--sub)}
-.c-bu{background:var(--pick)} .c-live{background:var(--live)} .c-ev{background:var(--event)} .c-prep{background:var(--prep)} .c-shoot{background:var(--vtr)} .c-due{background:var(--late)}
+.c-bu{background:var(--pick)} .c-live{background:var(--live)} .c-ev{background:var(--event)} .c-prep{background:var(--prep)} .c-shoot{background:var(--vtr)} .c-due{background:var(--due)}
 .legend.cal span::before{background:var(--c)}
 .dayev{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line)}
 .dayev .ce{display:inline-block;flex:none;font-size:11px;margin:2px 0 0}
@@ -1833,7 +1833,7 @@ function renderCal(){
   if (!calSel) calSel = today;
   $('calTitle').textContent = calY + '年' + calM + '月';
   $('calLegend').className = 'legend cal';
-  $('calLegend').innerHTML = CAL_TYPES.map(x => '<span style="--c:var(--' + { 'c-bu': 'pick', 'c-live': 'live', 'c-ev': 'event', 'c-prep': 'prep', 'c-shoot': 'vtr', 'c-due': 'late' }[x.cls] + ')">' + x.t + '</span>').join('');
+  $('calLegend').innerHTML = CAL_TYPES.map(x => '<span style="--c:var(--' + { 'c-bu': 'pick', 'c-live': 'live', 'c-ev': 'event', 'c-prep': 'prep', 'c-shoot': 'vtr', 'c-due': 'due' }[x.cls] + ')">' + x.t + '</span>').join('');
   const ev = calEvents();
   // 日曜始まり。前後の月の日も埋める
   const first = new Date(calY, calM - 1, 1), start = new Date(calY, calM - 1, 1 - first.getDay());
@@ -1903,7 +1903,7 @@ $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrol
 //   不具合の修正だけ          … もう1つ下を上げる（9.1 → 9.1.1）
 // これまでの大きな機能：1 出欠 / 2 生放送の役職表 / 3 空きコマ / 4 通知 /
 //                       5 ログイン / 6 管理者画面 / 7 VTR / 8 権限の管理 / 9 カレンダー
-const APP_VERSION = '9.1';
+const APP_VERSION = '9.2';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
