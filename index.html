@@ -558,7 +558,7 @@ function showLogin(){
 // ログイン情報が無効になったとき
 function loggedOut(){
   setToken(''); ME = null; BOOT = null; init = null; admin = null;
-  try { localStorage.removeItem('boot'); } catch(e){}
+  try { localStorage.removeItem('boot'); localStorage.removeItem('adminCache'); } catch(e){}
   if (OS) { try { OS.logout(); } catch(e){} }
   showLogin();
 }
@@ -715,14 +715,27 @@ $('saveBtn').onclick = () => {
 };
 
 // ---------- 管理者 ----------
+// 前回の内容をすぐ表示して、裏で最新に入れ替える
 function loadAdmin(){
-  $('adminLoading').hidden = false; $('adminBody').hidden = true;
-  run('getAdmin').then(d => {
+  const showAdmin = d => {
     admin = d; $('adminLoading').hidden = true; $('adminBody').hidden = false;
-    const next = d.days.find(x => x.date >= d.today && (x.kind === '部会' || x.kind === 'イベント'));
-    selDate = next ? next.date : '';
+    if (!selDate || !d.days.some(x => x.date === selDate)) {
+      const next = d.days.find(x => x.date >= d.today && (x.kind === '部会' || x.kind === 'イベント'));
+      selDate = next ? next.date : '';
+    }
     renderAdmin();
-  }).catch(e => { $('adminLoading').textContent = '読み込めませんでした：' + e.message; });
+  };
+  let cached = admin;
+  if (!cached) { try { cached = JSON.parse(localStorage.getItem('adminCache') || 'null'); } catch(e){} }
+  if (cached && cached.today === todayKey()) showAdmin(cached);
+  else { $('adminLoading').textContent = '読み込み中…'; $('adminLoading').hidden = false; $('adminBody').hidden = true; }
+  run('getAdmin').then(d => {
+    try { localStorage.setItem('adminCache', JSON.stringify(d)); } catch(e){}
+    if (view !== 'admin') { admin = d; return; }
+    // 生放送の役職を編集している途中なら、入力を消さないように描き直さない
+    if (typeof editDirty !== 'undefined' && editDirty) { admin.answers = d.answers; admin.stats = d.stats; return; }
+    showAdmin(d);
+  }).catch(e => { if (!admin) $('adminLoading').textContent = '読み込めませんでした：' + e.message; else toast('最新の内容を読み込めませんでした'); });
 }
 
 const ans = (date, name) => admin.answers[date + '|' + name] || {plan:'', actual:''};
@@ -1733,7 +1746,7 @@ $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrol
 //   不具合の修正だけ          … もう1つ下を上げる（9.1 → 9.1.1）
 // これまでの大きな機能：1 出欠 / 2 生放送の役職表 / 3 空きコマ / 4 通知 /
 //                       5 ログイン / 6 管理者画面 / 7 VTR / 8 権限の管理
-const APP_VERSION = '8.2';
+const APP_VERSION = '8.3';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
