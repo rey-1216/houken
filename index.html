@@ -537,7 +537,8 @@ function renderLineups(){
   if (!lives.length) { box.innerHTML = '<p class="empty">これからの生放送はまだ登録されていません。</p>'; return; }
   box.innerHTML = lives.map(d => '<div class="day"><div class="day-top"><span class="d">' + fmt(d.date) + '</span>' +
     '<span class="tag k-生放送">生放送</span>' + (d.memo ? '<span class="memo">' + esc(d.memo) + '</span>' : '') + '</div>' +
-    lineupHtml((BOOT.lineups || {})[d.date] || [], BOOT.roles || [], $('who').value) + '</div>').join('');
+    lineupHtml((BOOT.lineups || {})[d.date] || [], BOOT.roles || [], $('who').value) +
+    (can('lineup') ? '<div style="text-align:right"><button class="link" data-luedit="' + d.date + '">編集</button></div>' : '') + '</div>').join('');
 }
 
 // ---------- 部員：回答 ----------
@@ -1894,6 +1895,48 @@ $('calNext').onclick = () => { calM++; if (calM > 12) { calM = 1; calY++; } rend
 $('calToday').onclick = () => { calY = 0; calSel = ''; renderCal(); };
 $('calMine').onchange = () => renderCal();
 
+// ---------- 生放送の役職表：その場で編集（「生放送の割り当て」の権限がある人） ----------
+$('lineupList').addEventListener('click', e => {
+  const b = e.target.closest('[data-luedit]'); if (!b) return;
+  luForm(b.dataset.luedit);
+});
+function luForm(date, showOptional){
+  const rows = (BOOT.lineups || {})[date] || [], roles = BOOT.roles || [];
+  const cur = {};
+  rows.forEach(r => { const e = cur[r.role] = cur[r.role] || { s: [], sub: '' }; if (r.slot === '補佐') e.sub = r.name; else e.s.push(r.name); });
+  const showOpt = showOptional || roles.some(r => r.optional && cur[r.role]);
+  const sel = (role, slot, i, val) => '<select data-lr="' + esc(role) + '" data-ls="' + slot + '" style="width:auto;min-width:96px;margin:0;padding:6px 8px;font-size:14px' + (slot === 'sub' ? ';border-style:dashed' : '') + '">' +
+    '<option value="">' + (slot === 'sub' ? '補佐なし' : '—') + '</option>' +
+    BOOT.members.map(n => '<option' + (n === val ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select>';
+  form = { kind: 'lineup', date: date };
+  openModal('<h2>' + fmt(date) + ' 生放送の役職</h2>' +
+    roles.filter(r => !r.optional || showOpt).map(r => {
+      const e = cur[r.abbr] || { s: [], sub: '' };
+      let sels = '';
+      for (let i = 0; i < r.max; i++) sels += sel(r.abbr, 's', i, e.s[i] || '');
+      return '<div class="lrow"><div class="lrole"><b>' + esc(r.abbr) + '</b><small>' + esc(r.name) + (r.optional ? '（任意）' : '') + '</small></div><div class="lsel">' + sels + sel(r.abbr, 'sub', 0, e.sub) + '</div></div>';
+    }).join('') +
+    '<div class="actions">' + (!showOpt && roles.some(r => r.optional) ? '<button class="btn ghost" id="luOpt">任意の役職を表示</button>' : '') +
+    '<button class="btn" id="fSave">保存</button><button class="btn ghost" id="fClose">閉じる</button></div>');
+}
+$('mBody').addEventListener('click', e => {
+  if (!form || form.kind !== 'lineup') return;
+  if (e.target.id === 'luOpt') { e.stopImmediatePropagation(); luForm(form.date, true); return; }
+  if (e.target.id !== 'fSave') return;
+  e.stopImmediatePropagation();
+  const items = [];
+  $('mBody').querySelectorAll('select[data-lr]').forEach(x => {
+    if (x.value) items.push({ role: x.dataset.lr, slot: x.dataset.ls === 'sub' ? '補佐' : '担当', name: x.value });
+  });
+  const date = form.date, b = e.target; b.disabled = true;
+  run('setLineup', date, items).then(() => {
+    const saved = items.map(it => ({ date: date, role: it.role, slot: it.slot, name: it.name }));
+    BOOT.lineups = BOOT.lineups || {}; BOOT.lineups[date] = saved; saveBoot();
+    if (admin && admin.lineups) admin.lineups = admin.lineups.filter(r => r.date !== date).concat(saved);
+    closeModal(); renderLineups(); renderExp(); renderHome(); toast('役職表を保存しました');
+  }).catch(err => { toast('保存できませんでした：' + err.message); b.disabled = false; });
+}, true);
+
 $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrollIntoView({ behavior: 'smooth' }); };
 
 // ---------- バージョンと更新のお知らせ ----------
@@ -1903,7 +1946,7 @@ $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrol
 //   不具合の修正だけ          … もう1つ下を上げる（9.1 → 9.1.1）
 // これまでの大きな機能：1 出欠 / 2 生放送の役職表 / 3 空きコマ / 4 通知 /
 //                       5 ログイン / 6 管理者画面 / 7 VTR / 8 権限の管理 / 9 カレンダー
-const APP_VERSION = '9.2';
+const APP_VERSION = '9.3';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
