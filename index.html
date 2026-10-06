@@ -256,6 +256,10 @@ td small{color:var(--sub);margin-left:3px}
     <div class="legend" id="calLegend"></div>
     <div class="calgrid" id="calGrid"></div>
     <div id="calDay"></div>
+    <details class="mybox" id="calFeedBox">
+      <summary>iPhoneのカレンダーに追加</summary>
+      <div id="calFeed"><p class="empty">読み込み中…</p></div>
+    </details>
   </section>
 
   <section id="vtr" hidden>
@@ -411,7 +415,7 @@ function fmt(k){ const [y,m,d] = k.split('-').map(Number); return m + '/' + d + 
 function addDays(k,n){ const [y,m,d] = k.split('-').map(Number); const t = new Date(y,m-1,d+n);
   return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'); }
 // サーバー（Apps Script）とのやりとり
-const ARGS = { saveEvent: ['ev'], deleteEvent: ['id'], getPerms: [], savePerms: ['roles','assign','extra'], vtr: ['year'], saveVtr: ['year','row','title','changes'], addVtr: ['year','cells'], saveProject: ['p'], deleteProject: ['id'], saveTask: ['t','notify'], deleteTask: ['id'], sendTo: ['names','title','body'], login: ['sid','pass'], setPassword: ['sid','current','next'], boot: [], saveMine: ['name','map','notes'], saveFree: ['name','slots'], getAdmin: [],
+const ARGS = { getCalFeed: [], saveCalFeed: ['settings','renew'], stopCalFeed: [], saveEvent: ['ev'], deleteEvent: ['id'], getPerms: [], savePerms: ['roles','assign','extra'], vtr: ['year'], saveVtr: ['year','row','title','changes'], addVtr: ['year','cells'], saveProject: ['p'], deleteProject: ['id'], saveTask: ['t','notify'], deleteTask: ['id'], sendTo: ['names','title','body'], login: ['sid','pass'], setPassword: ['sid','current','next'], boot: [], saveMine: ['name','map','notes'], saveFree: ['name','slots'], getAdmin: [],
   setActual: ['date','name','actual'], setLineup: ['date','items'], broadcast: ['title','body'], remindNow: ['kind'] };
 // ログイン情報（この端末に保存）
 let TOKEN = (() => { try { return localStorage.getItem('token') || ''; } catch(e){ return ''; } })();
@@ -592,6 +596,7 @@ function showLogin(){
 // ログイン情報が無効になったとき
 function loggedOut(){
   setToken(''); ME = null; BOOT = null; init = null; admin = null;
+  try { calFeed = null; } catch(e){}
   try { localStorage.removeItem('boot'); localStorage.removeItem('adminCache'); } catch(e){}
   if (OS) { try { OS.logout(); } catch(e){} }
   showLogin();
@@ -1980,6 +1985,60 @@ $('mBody').addEventListener('click', e => {
   }).catch(err => { toast('保存できませんでした：' + err.message); b.disabled = false; });
 }, true);
 
+// ---------- iPhoneなどのカレンダーへの反映 ----------
+let calFeed = null;
+$('calFeedBox').addEventListener('toggle', () => {
+  if (!$('calFeedBox').open || calFeed) return;
+  run('getCalFeed').then(d => { calFeed = d; renderCalFeed(); })
+    .catch(e => { $('calFeed').innerHTML = '<p class="empty">読み込めませんでした：' + esc(e.message) + '</p>'; });
+});
+function renderCalFeed(){
+  const st = calFeed.settings, on = !!calFeed.key;
+  const opt = (id, v) => '<select id="' + id + '" style="width:auto;margin:0 0 0 6px">' +
+    [['mine', '自分の担当だけ'], ['all', 'すべて'], ['none', '入れない']].map(([k, l]) => '<option value="' + k + '"' + (v === k ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
+  const chk = (id, v, l) => '<label class="hint" style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="' + id + '"' + (v ? ' checked' : '') + ' style="width:auto;margin:0">' + l + '</label>';
+  let html = '<p class="hint">放研の予定を、iPhoneのカレンダーアプリに表示できます。入れる内容は自分で選べて、ポータルで予定が変わるとカレンダーにも反映されます。</p>' +
+    chk('cfDays', st.days, '部会・生放送・イベント（準備期間も）') +
+    chk('cfEvents', st.events, '追加した予定（役職会議など）') +
+    '<div class="hint" style="margin:6px 0">撮影' + opt('cfShoot', st.shoot) + '</div>' +
+    '<div class="hint" style="margin:6px 0">VTRの締め切り' + opt('cfDue', st.due) + '</div>';
+  if (!on) {
+    html += '<div class="actions"><button class="btn" id="cfStart">この内容で使い始める</button></div>';
+  } else {
+    const url = API + '?cal=' + calFeed.key;
+    html += '<div class="actions"><a class="btn" href="' + esc(url.replace(/^https:/, 'webcal:')) + '" style="text-decoration:none">iPhoneのカレンダーに追加</a>' +
+      '<button class="btn ghost" id="cfSave">入れる内容を保存</button></div>' +
+      '<p class="hint">「iPhoneのカレンダーに追加」を押して「照会」を選ぶと登録されます。うまくいかないときは、URLをコピーして、iPhoneの「設定 → アプリ → カレンダー → カレンダーアカウント → アカウントを追加 → その他 → 照会するカレンダーを追加」に貼り付けてください。</p>' +
+      '<div class="actions"><button class="link" id="cfCopy">URLをコピー</button><button class="link" id="cfRenew">URLを作り直す</button>' +
+      '<button class="link" id="cfStop" style="color:var(--live)">使うのをやめる</button></div>' +
+      '<p class="hint">このURLを知っている人は、あなたの予定を見られます。他の人には教えないでください。もし広まってしまったら「URLを作り直す」を押してください（古いURLは使えなくなります）。</p>';
+  }
+  $('calFeed').innerHTML = html;
+}
+function cfSettings(){
+  return { days: $('cfDays').checked, events: $('cfEvents').checked, shoot: $('cfShoot').value, due: $('cfDue').value };
+}
+$('calFeed').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.id === 'cfStart' || b.id === 'cfSave' || b.id === 'cfRenew') {
+    if (b.id === 'cfRenew' && !confirm('URLを作り直すと、今のURLで登録したカレンダーは更新されなくなります。作り直しますか？')) return;
+    b.disabled = true;
+    run('saveCalFeed', cfSettings(), b.id === 'cfRenew').then(d => {
+      calFeed = d; renderCalFeed();
+      toast(b.id === 'cfStart' ? '準備ができました。「iPhoneのカレンダーに追加」を押してください' : b.id === 'cfRenew' ? '新しいURLを作りました。もう一度追加し直してください' : '保存しました');
+    }).catch(err => { toast('保存できませんでした：' + err.message); b.disabled = false; });
+  }
+  if (b.id === 'cfStop') {
+    if (!confirm('カレンダーへの反映をやめますか？ iPhoneのカレンダーからも、照会したカレンダーを削除してください。')) return;
+    run('stopCalFeed').then(d => { calFeed = d; renderCalFeed(); toast('やめました'); }).catch(err => toast(err.message));
+  }
+  if (b.id === 'cfCopy') {
+    const url = API + '?cal=' + calFeed.key;
+    (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => toast('URLをコピーしました'))
+      .catch(() => prompt('このURLをコピーしてください', url));
+  }
+});
+
 $('calToday').onclick = () => { calY = 0; calSel = ''; renderCal(); };
 $('calMine').onchange = () => renderCal();
 
@@ -2034,7 +2093,7 @@ $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrol
 //   不具合の修正だけ          … もう1つ下を上げる（9.1 → 9.1.1）
 // これまでの大きな機能：1 出欠 / 2 生放送の役職表 / 3 空きコマ / 4 通知 /
 //                       5 ログイン / 6 管理者画面 / 7 VTR / 8 権限の管理 / 9 カレンダー
-const APP_VERSION = '9.4';
+const APP_VERSION = '9.5';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
