@@ -30,7 +30,7 @@
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-/* バッジやタグの中では改行しない（足りなければバッジごと次の行へ） */
+/* バッジ内で改行しない */
 .st,.tag,.badge{display:inline-block;white-space:nowrap}
 html{touch-action:manipulation}
 body.wide main{max-width:1180px}
@@ -385,11 +385,11 @@ td small{color:var(--sub);margin-left:3px}
 
 <script src="config.js"></script>
 <script>
-// 日の種類ごとの選択肢。multi は複数選べる、solo は選ぶと他が外れる
+// 日の種類ごとの選択肢（multi: 複数可 / solo: 排他）
 const OPT = {
   '部会':   { multi: ['PSH','部会','遅刻'], solo: ['欠席','未定'] },
-  '部会生放送': { multi: ['生放送','PSH','部会','遅刻'], solo: ['欠席','未定'] }, // 生放送がある水曜（時間順）
-  '生放送': { multi: [], solo: [] }, // 生放送だけの日は回答なし
+  '部会生放送': { multi: ['生放送','PSH','部会','遅刻'], solo: ['欠席','未定'] },
+  '生放送': { multi: [], solo: [] },
   'イベント': { multi: [], solo: ['出席','欠席'] },
   '準備':   { multi: ['1コマ','2コマ','3コマ','4コマ','5コマ','5コマ以降'], solo: ['来られない'] },
   '準備生放送': { multi: ['生放送','1コマ','2コマ','3コマ','4コマ','5コマ','5コマ以降'], solo: ['来られない'] }
@@ -398,7 +398,6 @@ const NOT_COMING = ['欠席','来られない','未定'];
 const SHORT = {'生放送':'生','出席':'○','遅刻':'△','欠席':'×','未定':'?','PSH':'P','部会':'部',
   '1コマ':'1','2コマ':'2','3コマ':'3','4コマ':'4','5コマ':'5','5コマ以降':'5〜','来られない':'×'};
 const W = '日月火水木金土';
-// 通知まわり（先に宣言しておく）
 const ONESIGNAL_APP_ID = '5353a1f5-1881-4d62-9322-325728da0214';
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
@@ -409,25 +408,21 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const parts = p => p ? p.split(',') : [];
 const optsOf = kind => OPT[kind] || OPT['部会'];
-// 生放送がある部会の日は専用の選択肢にする
 const kindKey = d => !d.live ? d.kind : d.kind === '部会' ? '部会生放送' : d.kind === '準備' ? '準備生放送' : d.kind;
 function fmt(k){ const [y,m,d] = k.split('-').map(Number); return m + '/' + d + '(' + W[new Date(y,m-1,d).getDay()] + ')'; }
 function addDays(k,n){ const [y,m,d] = k.split('-').map(Number); const t = new Date(y,m-1,d+n);
   return t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0'); }
-// サーバー（Apps Script）とのやりとり
+// API
 const ARGS = { getCalFeed: [], saveCalFeed: ['settings','renew'], stopCalFeed: [], saveEvent: ['ev'], deleteEvent: ['id'], getPerms: [], savePerms: ['roles','assign','extra'], vtr: ['year'], saveVtr: ['year','row','title','changes'], addVtr: ['year','cells'], saveProject: ['p'], deleteProject: ['id'], saveTask: ['t','notify'], deleteTask: ['id'], sendTo: ['names','title','body'], login: ['sid','pass'], setPassword: ['sid','current','next'], boot: [], saveMine: ['name','map','notes'], saveFree: ['name','slots'], getAdmin: [],
   setActual: ['date','name','actual'], setLineup: ['date','items'], broadcast: ['title','body'], remindNow: ['kind'] };
-// ログイン情報（この端末に保存）
 let TOKEN = (() => { try { return localStorage.getItem('token') || ''; } catch(e){ return ''; } })();
 let ME = null;
-// 権限を持っているか（部の役職から計算された一覧で判断）
 function can(k){ return !!(ME && ME.perms && ME.perms.includes(k)); }
-// 管理者画面を開ける権限（どれか1つでも持っていればOK）
 const ADMIN_PERMS = ['attView', 'actual', 'rate', 'lineup', 'proxyFree', 'remind', 'broadcast', 'perms'];
 function canAdmin(){ return ADMIN_PERMS.some(can); }
 function setToken(t){ TOKEN = t; try { t ? localStorage.setItem('token', t) : localStorage.removeItem('token'); } catch(e){} }
 const API = (typeof window.API_URL === 'string') ? window.API_URL : '';
-// 返事を読み取る。データ以外（エラーページなど）が返ってきたら中身の一部を見せる
+// JSON以外のレスポンスはエラーにする
 function readJson(r){
   return r.text().then(t => {
     try { return JSON.parse(t); }
@@ -453,7 +448,6 @@ function toast(t){ const el = $('toast'); el.textContent = t; el.classList.add('
 function getSaved(){ try { return localStorage.getItem('who') || ''; } catch(e){ return ''; } }
 function setSaved(v){ try { localStorage.setItem('who', v); } catch(e){} }
 
-// 選択肢をタップしたときの新しい値
 function toggle(kind, cur, t){
   const o = optsOf(kind);
   let set = parts(cur);
@@ -463,7 +457,7 @@ function toggle(kind, cur, t){
   return o.multi.filter(x => set.includes(x)).join(',');
 }
 
-// ---------- 画面の切り替え ----------
+// ルーティング（hash）
 const VIEWS = { home: '', me: '出欠を回答', cal: 'カレンダー', vtr: 'VTR', work: '仕事分担', lineups: '生放送の役職表', free: '空きコマ', admin: '管理者' };
 let view = 'home';
 function show(){
@@ -479,7 +473,6 @@ function show(){
   if (view === 'lineups') renderLineups();
   if (view === 'free') {
     myFreeEdit = null; renderFree();
-    // まだ登録していない人は、自分の登録欄を開いておく
     $('myFreeBox').open = !!(ME && !freeAll()[ME.name]);
   }
   if (view === 'me') renderMine();
@@ -497,7 +490,7 @@ document.querySelector('.menu').onclick = e => {
   const b = e.target.closest('button[data-go]'); if (b) location.hash = '#' + b.dataset.go;
 };
 
-// トップ：次の活動日と次の生放送
+// トップ
 function renderHome(){
   renderPush();
   const name = $('who').value, box = $('summary');
@@ -518,7 +511,6 @@ function renderHome(){
       : rows.length ? rows.map(r => esc(r.role) + (r.slot === '補佐' ? '（補佐）' : '')).join('・') : '役職なし';
     html += '<div class="sum live"><b>次の生放送</b>' + fmt(live.date) + '　' + txt + '</div>';
   }
-  // 自分のVTR
   const myV = myVtrs();
   if (myV.length) {
     const v = myV[0];
@@ -534,7 +526,6 @@ function renderHome(){
   $('freeBadge').innerHTML = BOOT && BOOT.free && !BOOT.free[name] ? '<span class="badge">未登録</span>' : '';
 }
 
-// 生放送の役職表（一覧）
 function renderLineups(){
   const box = $('lineupList');
   if (!init) { box.innerHTML = '<p class="empty">読み込み中…</p>'; return; }
@@ -546,8 +537,8 @@ function renderLineups(){
     (can('lineup') ? '<div style="text-align:right"><button class="link" data-luedit="' + d.date + '">編集</button></div>' : '') + '</div>').join('');
 }
 
-// ---------- 部員：回答 ----------
-// 前回のデータをすぐ表示して、裏で最新に入れ替える（2回目以降は待ちなし）
+// 出欠
+// キャッシュを先に表示し、裏で更新
 let BOOT = null;
 function mineOf(name){
   const m = {};
@@ -572,7 +563,6 @@ function applyBoot(b){
   const today = todayKey();
   BOOT = b; ME = b.me;
   init = { today: today, members: b.members, days: b.days.filter(d => d.date >= today) };
-  // 名前はログインした本人で固定
   $('who').innerHTML = '<option>' + esc(ME.name) + '</option>';
   $('who').value = ME.name;
   $('meName').textContent = ME.name;
@@ -593,7 +583,6 @@ function showLogin(){
   if (location.hash && location.hash !== '#home') location.hash = '#home';
   renderPush();
 }
-// ログイン情報が無効になったとき
 function loggedOut(){
   setToken(''); ME = null; BOOT = null; init = null; admin = null;
   try { calFeed = null; } catch(e){}
@@ -611,17 +600,14 @@ function loggedOut(){
   loadBoot();
 })();
 
-// ログイン成功後
 function signedIn(r){
   setToken(r.token);
   ['lgPass','pwNow','pwNew','pwNew2'].forEach(id => { $(id).value = ''; $(id).type = 'password'; });
   document.querySelectorAll('.pw .eye').forEach(b => b.textContent = '表示');
   $('loginForm').hidden = true; $('pwForm').hidden = true; $('homeBody').hidden = false;
-  // ログインの返事にデータが入っているので、すぐ表示する
   if (r.boot) { applyBoot(r.boot); saveBoot(); syncPushUser(); }
   else { $('summary').innerHTML = '<p class="empty">読み込み中…</p>'; loadBoot(); }
 }
-// パスワードの画面。first＝初回番号でログインした直後、そうでなければ変更
 let pwMode = null, pwSid = '', pwCode = '';
 function showPwForm(first){
   pwMode = first ? 'first' : 'change';
@@ -666,7 +652,6 @@ $('who').onchange = () => {
   renderMine(); renderHome(); syncPushUser();
 };
 
-// 役職表（見るだけ）
 function lineupHtml(rows, roles, me){
   if (!rows.length) return '<p class="hint">まだ決まっていません。</p>';
   const nm = n => n === me ? '<mark>' + esc(n) + '</mark>' : esc(n);
@@ -753,8 +738,7 @@ $('saveBtn').onclick = () => {
     .finally(() => { b.disabled = false; b.textContent = '保存する'; });
 };
 
-// ---------- 管理者 ----------
-// 前回の内容をすぐ表示して、裏で最新に入れ替える
+// 管理者
 function loadAdmin(){
   const showAdmin = d => {
     admin = d; $('adminLoading').hidden = true; $('adminBody').hidden = false;
@@ -771,7 +755,7 @@ function loadAdmin(){
   run('getAdmin').then(d => {
     try { localStorage.setItem('adminCache', JSON.stringify(d)); } catch(e){}
     if (view !== 'admin') { admin = d; return; }
-    // 生放送の役職を編集している途中なら、入力を消さないように描き直さない
+    // 編集中は再描画しない
     if (typeof editDirty !== 'undefined' && editDirty) { admin.answers = d.answers; admin.stats = d.stats; return; }
     showAdmin(d);
   }).catch(e => { if (!admin) $('adminLoading').textContent = '読み込めませんでした：' + e.message; else toast('最新の内容を読み込めませんでした'); });
@@ -785,7 +769,6 @@ function renderAdmin(){
   const next = lives.find(d => d.date >= admin.today) || lives[lives.length - 1];
   liveSel = next ? next.date : '';
   loadEdit(); renderLive();
-  // 権限に合わせて、見せるタブと欄を切り替える
   $('bcSec').hidden = !can('broadcast');
   $('remSec').hidden = !can('remind');
   document.querySelector('#adminTabs [data-tab="att"]').hidden = !can('attView');
@@ -808,7 +791,6 @@ function renderChips(){
 }
 $('dateChips').onclick = e => { const b = e.target.closest('button'); if (!b) return; selDate = b.dataset.d; renderChips(); renderDay(); };
 
-// メモの一覧（日付ごと）
 function memosHtml(dates, withDate){
   const rows = [];
   dates.forEach(dt => admin.members.forEach(n => {
@@ -853,7 +835,7 @@ function renderDay(){
   box.innerHTML = html;
 }
 
-// 先に画面を変えて、裏で保存する（待ち時間を感じにくくする）
+// 楽観的更新
 $('dayDetail').onclick = e => {
   const b = e.target.closest('button[data-n]'); if (!b) return;
   const date = selDate, name = b.dataset.n, a = ans(date, name);
@@ -903,7 +885,7 @@ function renderStats(){
     '</table></div>';
 }
 
-// ---------- 生放送の役職 ----------
+// 生放送の役職
 let liveSel = '', edit = {}, editDirty = false, showOpt = false;
 
 function loadEdit(){
@@ -1000,7 +982,7 @@ function renderExp(){
   $('exp').innerHTML = t + '</table></div>' + (past.size ? '' : '<p class="hint">まだ終わった生放送がありません。</p>') +
     (top ? '<p class="hint">出席率は、終わった生放送のうち役職か補佐に入った回の割合です（幹部だけに表示）。</p>' : '');
 }
-// ---------- 空きコマ ----------
+// 空きコマ
 const FD = ['月','火','水','木','金'], FK = [1,2,3,4,5];
 let myFreeEdit = null, freeSel = '';
 const freeAll = () => (BOOT && BOOT.free) || {};
@@ -1025,10 +1007,9 @@ function renderFree(){
   renderAllFree(name, free);
 }
 
-// ---------- みんなの空きコマ（4つの表示） ----------
 const GCOL = { '機材': '#2B6CD8', '美術': '#E07A1F', 'テロップ': '#1E9A5A' };
 const MODES = { all: '全員', count: '人数', filter: '班・学年', one: '1人' };
-let freeMode = 'all', freeGroup = '', freeGrade = '', freeOne = ''; // 最初は「全員」。班・学年は空＝すべて
+let freeMode = 'all', freeGroup = '', freeGrade = '', freeOne = '';
 const infoOf = n => ((BOOT && BOOT.info) || {})[n] || { groups: [], grade: '' };
 function chipBg(n){
   const cs = infoOf(n).groups.map(g => GCOL[g] || '#8A93A3');
@@ -1043,7 +1024,6 @@ function renderAllFree(name, free){
   const groups = Object.keys(GCOL).concat([...new Set(all.flatMap(n => infoOf(n).groups))].filter(g => !GCOL[g]));
   const grades = [...new Set(all.map(n => infoOf(n).grade).filter(g => g))].sort();
   $('freeModes').innerHTML = Object.keys(MODES).map(m => '<button data-m="' + m + '"' + (m === freeMode ? ' class="on"' : '') + '>' + MODES[m] + '</button>').join('');
-  // 切り替えの下の段：班・学年なら2段のボタン、1人なら部員の選択
   const row = (attr, cur, list) => '<div class="chips sub">' + list.map(([v, l]) =>
     '<button data-' + attr + '="' + esc(v) + '"' + (v === cur ? ' class="on"' : '') + '>' + esc(l) + '</button>').join('') + '</div>';
   if (freeMode === 'filter') {
@@ -1060,7 +1040,6 @@ function renderAllFree(name, free){
   $('freeSubs').hidden = !$('freeSubs').innerHTML;
   $('freeSubs').style.display = $('freeSubs').hidden ? '' : 'block';
 
-  // 1人：選んだ人の空きコマだけ
   if (freeMode === 'one') {
     $('freeLegend').innerHTML = '';
     if (!freeOne) { $('allFree').innerHTML = '<p class="empty">上で部員を選ぶと、その人の空きコマが表示されます。</p>'; $('freeNames').innerHTML = ''; return; }
@@ -1074,7 +1053,6 @@ function renderAllFree(name, free){
     return;
   }
 
-  // 対象の人
   let pool = all;
   if (freeMode === 'filter') pool = all.filter(n => (!freeGroup || infoOf(n).groups.includes(freeGroup)) && (!freeGrade || infoOf(n).grade === freeGrade));
   const done = pool.filter(n => free[n]);
@@ -1142,7 +1120,7 @@ $('allFree').onclick = e => {
   renderFree();
 };
 
-// ---------- 空きコマの代理登録（管理者） ----------
+// 空きコマ代理登録
 let proxyEdit = null;
 function renderProxy(){
   const n = $('proxyWho').value, box = $('proxyFree');
@@ -1172,7 +1150,7 @@ $('proxyFree').onclick = e => {
   }).catch(err => { b.disabled = false; b.textContent = name + ' さんの空きコマを保存'; toast('保存できませんでした：' + err.message); });
 };
 
-// ---------- 通知（OneSignal） ----------
+// 通知（OneSignal）
 
 window.OneSignalDeferred = window.OneSignalDeferred || [];
 OneSignalDeferred.push(async function(OneSignal){
@@ -1227,7 +1205,6 @@ $('pushBox').onclick = async e => {
   renderPush();
 };
 
-// 管理者：お知らせとリマインド
 $('bcSend').onclick = () => {
   const title = $('bcTitle').value.trim(), body = $('bcBody').value.trim();
   if (!body) { toast('本文を入れてください'); return; }
@@ -1247,7 +1224,7 @@ $('bcSend').onclick = () => {
     .finally(() => { b.disabled = false; });
 });
 
-// ---------- 管理者：上のまとめとタブ ----------
+// 管理者：サマリー・タブ
 let adminTab = 'att';
 function showTab(t){
   const btn = document.querySelector('#adminTabs [data-tab="' + t + '"]');
@@ -1266,7 +1243,6 @@ function renderAdminSum(){
   if (!admin) return;
   const today = admin.today, cards = [], seeAtt = can('attView');
   const COME = ['出席','遅刻','PSH','部会','生放送'];
-  // 次の活動日
   const next = admin.days.find(d => d.date >= today && (d.kind === '部会' || d.kind === 'イベント'));
   if (next && seeAtt) {
     let come = 0, no = 0, none = 0;
@@ -1279,7 +1255,6 @@ function renderAdminSum(){
     cards.push('<button class="acard' + (none ? ' alert' : '') + '" data-to="att" data-date="' + next.date + '"><b>次の' + next.kind + '　' + fmt(next.date) + '</b>' +
       '<span class="big">来る予定 ' + come + '人</span>欠席 ' + no + '・未回答 ' + none + '</button>');
   }
-  // 次の生放送
   const live = admin.days.find(d => d.live && d.date >= today);
   if (live) {
     const rows = admin.lineups.filter(r => r.date === live.date && r.slot === '担当');
@@ -1289,17 +1264,14 @@ function renderAdminSum(){
       '<span class="big">役職 ' + (basic.length - empty.length) + '/' + basic.length + '</span>' +
       (empty.length ? '未定：' + esc(empty.slice(0, 5).join('・')) + (empty.length > 5 ? ' ほか' : '') : 'すべて決まっています') + '</button>');
   }
-  // 次のイベント
   const ev = admin.days.find(d => d.kind === 'イベント' && d.date >= today);
   if (ev) {
     const [y, m, d] = ev.date.split('-').map(Number), [ty, tm, td] = today.split('-').map(Number);
     const left = Math.round((new Date(y, m - 1, d) - new Date(ty, tm - 1, td)) / 864e5);
     cards.push('<button class="acard ev" data-to="event"><b>' + esc(ev.prepFor || 'イベント') + '</b><span class="big">あと ' + left + '日</span>' + fmt(ev.date) + ' 本番</button>');
   }
-  // 未回答の人（2週間）
   const unans = admin.stats.filter(x => x.unanswered > 0).length;
   if (seeAtt) cards.push('<button class="acard' + (unans ? ' alert' : '') + '" data-to="att"><b>出欠の未回答（2週間）</b><span class="big">' + unans + '人</span>リマインドは「通知」タブから</button>');
-  // 空きコマ未登録
   const fr = (BOOT && BOOT.free) || {};
   const noFree = admin.members.filter(n => !fr[n]).length;
   cards.push('<button class="acard' + (noFree ? ' alert' : '') + '" data-to="notice"><b>空きコマ未登録</b><span class="big">' + noFree + '人</span>' + admin.members.length + '人中</button>');
@@ -1313,7 +1285,7 @@ $('adminSum').onclick = e => {
   $('adminTabs').scrollIntoView({ behavior: 'smooth' });
 };
 
-// ---------- 管理者：個人宛の通知 ----------
+// 個人宛通知
 const dmSel = new Set();
 function renderDmPick(){
   if (!admin) return;
@@ -1338,7 +1310,7 @@ $('dmSend').onclick = () => {
   }).catch(err => toast('送れませんでした：' + err.message)).finally(() => { b.disabled = false; });
 };
 
-// ---------- パスワードの表示・非表示 ----------
+// パスワード表示切替
 document.querySelectorAll('input[type=password]').forEach(inp => {
   const wrap = document.createElement('span'); wrap.className = 'pw';
   inp.parentNode.insertBefore(wrap, inp); wrap.appendChild(inp);
@@ -1353,12 +1325,12 @@ document.querySelectorAll('input[type=password]').forEach(inp => {
   wrap.appendChild(btn);
 });
 
-// ---------- 仕事分担 ----------
+// 仕事分担（未使用）
 const TST = ['未着手', '進行中', '完了'];
 const TST_CLS = { '未着手': 't-未定', '進行中': '', '完了': 't-出席' };
 let workTab = 'mine', showEnded = false;
 const openProj = new Set();
-// トップの表示から先に呼ばれるので、関数宣言にしておく
+// 早期に呼ばれるため関数宣言
 function W_(){ return { projects: (BOOT && BOOT.projects) || [], tasks: (BOOT && BOOT.tasks) || [], types: (BOOT && BOOT.taskTypes) || [] }; }
 function myTasks(){ return ME ? W_().tasks.filter(t => t.members.includes(ME.name)) : []; }
 function byDue(a, b){ return (a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : 0; }
@@ -1390,11 +1362,9 @@ function renderWork(){
   document.querySelectorAll('#workTabs button').forEach(b => b.classList.toggle('on', b.dataset.wt === workTab));
   $('workMine').hidden = workTab !== 'mine'; $('workAll').hidden = workTab !== 'all';
   const w = W_();
-  // 自分の仕事
   const mine = myTasks(), open = mine.filter(t => t.status !== '完了').sort(byDue), done = mine.filter(t => t.status === '完了');
   $('workMine').innerHTML = (open.length ? open.map(t => taskHtml(t, true)).join('') : '<p class="empty">今担当している仕事はありません。</p>') +
     (done.length ? '<details class="mybox"><summary>完了した仕事 ' + done.length + '件</summary>' + done.map(t => taskHtml(t, true)).join('') + '</details>' : '');
-  // 企画ごと
   $('showEnded').textContent = showEnded ? '進行中の企画だけ表示' : '終了した企画も表示';
   const projs = w.projects.filter(p => showEnded || p.status !== '終了').sort(byDue);
   $('projList').innerHTML = projs.length ? projs.map(p => {
@@ -1412,7 +1382,7 @@ function renderWork(){
   }).join('') : '<p class="empty">企画はまだありません。「＋ 企画を作る」から作ってください。</p>';
 }
 
-// 進み具合の変更（先に画面を変えて、裏で保存）
+// 楽観的更新
 function setTaskStatus(id, st){
   const t = W_().tasks.find(x => x.id === id);
   if (!t || t.status === st) return;
@@ -1435,7 +1405,7 @@ $('work').onclick = e => {
   if (b.id === 'showEnded') { showEnded = !showEnded; renderWork(); }
 };
 
-// 入力用の小窓
+// モーダル
 let form = null;
 function openModal(html){ $('mBody').innerHTML = html; $('modal').hidden = false; }
 function closeModal(){ $('modal').hidden = true; $('mBody').innerHTML = ''; form = null; }
@@ -1521,11 +1491,11 @@ $('mBody').onclick = e => {
   }
 };
 
-// ---------- VTR（今までのVTR一覧のスプレッドシート） ----------
+// VTR
 let vtrTab = 'mine', vtrYearSel = '', vtrFilter = '';
 const vtrCache = {};
 function pn(v){ return String(v || '').replace(/[()（）\s\u3000]/g, ''); }
-// 「4月22日」「2/25(水)」などを日付にする。曜日があれば年を合わせる
+// 自由書式の日付を解釈（曜日から年を推定）
 function jDate(str, year){
   const m = String(str || '').match(/(\d{1,2})\s*[月\/／]\s*(\d{1,2})/);
   if (!m) return '';
@@ -1538,7 +1508,6 @@ function jDate(str, year){
   return pick + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
 }
 function vtrDone(c){ return /書き出し|完了|済/.test(c['状態'] || ''); }
-// 自分がそのVTRで何の担当か
 function vtrRoles(c){
   if (!ME) return [];
   const info = (BOOT && BOOT.info && BOOT.info[ME.name]) || {};
@@ -1552,7 +1521,6 @@ function vtrDueCls(v){
   const today = todayKey();
   return v.due < today ? 'over' : v.due <= addDays(today, 3) ? 'soon' : '';
 }
-// 一番新しい年の中で、自分の担当で終わっていないもの（締め切り順）
 function myVtrs(){
   const d = BOOT && BOOT.vtr; if (!d || !ME) return [];
   return d.rows.filter(r => !vtrDone(r.c) && vtrRoles(r.c).length)
@@ -1577,14 +1545,13 @@ function vtrCard(r, year, showYear){
     (canEditVtr(c) ? '<div style="text-align:right"><button class="link" data-vedit="' + r.r + '" data-vyear="' + esc(year) + '">編集</button></div>' : '') + '</div>';
 }
 
-// アポ状況のしるし（済・完了・取れた・OK なら緑）
 function aponHtml(v){
   if (!v) return '';
   const ok = /済|完了|取れた|OK|ok/.test(v);
   return ' <span class="st" style="' + (ok ? 'background:var(--ok);border-color:var(--ok);color:#fff' : 'border-color:var(--late);color:var(--late)') + '">アポ ' + esc(v) + '</span>';
 }
 
-// これからの生放送のOP・END（生放送の役職表から）。onlyMine＝自分が入っている回だけ
+// OP・END（生放送の役職表から）
 const OPEND = ['OP', 'END'];
 function opendHtml(onlyMine){
   if (!init) return '';
@@ -1639,7 +1606,6 @@ function renderVtr(){
     }).join('') : '<p class="empty">これからの撮影予定はありません。</p>';
     return;
   }
-  // VTR一覧
   const q = nz($('vtrQ').value);
   if (q && $('vtrAllYears').checked) { box.innerHTML = searchAllYears(q); return; }
   if (!vtrYearSel) vtrYearSel = latest.year;
@@ -1656,13 +1622,12 @@ function renderVtr(){
   box.innerHTML = html;
 }
 
-// 検索用に文字をそろえる（全角英数→半角、空白・カッコを無視、小文字）
+// 検索用の正規化
 function nz(v){
   return String(v || '').replace(/[Ａ-Ｚａ-ｚ０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
     .replace(/[\s\u3000()（）]/g, '').toLowerCase();
 }
 function hit(r, q){ return Object.keys(r.c).some(h => nz(r.c[h]).includes(q)); }
-// すべての年から探す（まだ読んでいない年は読み込む）
 let loadingYears = false;
 function searchAllYears(q){
   const years = BOOT.vtrYears || [BOOT.vtr.year];
@@ -1712,14 +1677,12 @@ $('vtr').onclick = e => {
   if (b.id === 'vAdd') vtrForm(vtrNow(), null);
 };
 
-// VTRの編集・追加の小窓
 function vtrForm(d, r){
   form = { kind: 'vtr', year: d.year, row: r };
   const c = r ? r.c : {};
   openModal('<h2>' + (r ? 'VTRを編集' : 'VTRを追加（' + esc(d.year) + '）') + '</h2>' +
     d.heads.map((h, i) => {
       const op = (d.opts && d.opts[h]) || (h === '状態' ? d.statuses : null);
-      // 元の表の値が選択肢にないときも、消えないように残す
       const list = op && op.length ? (c[h] && !op.includes(c[h]) ? op.concat(c[h]) : op) : null;
       return '<label class="who">' + esc(h) + (list ?
       '<select data-h="' + esc(h) + '"><option value="">（なし）</option>' + list.map(st => '<option' + (st === c[h] ? ' selected' : '') + '>' + esc(st) + '</option>').join('') + '</select>' :
@@ -1728,7 +1691,6 @@ function vtrForm(d, r){
     '<p class="hint">日付は今までの表と同じ書き方（例：4月22日、6/6（土））で入れてください。</p>' +
     '<div class="actions"><button class="btn" id="fSave">保存</button><button class="btn ghost" id="fClose">閉じる</button></div>');
 }
-// 保存ボタン（VTRの小窓のときだけここで処理）
 $('mBody').addEventListener('click', e => {
   if (!form || form.kind !== 'vtr' || e.target.id !== 'fSave') return;
   e.stopImmediatePropagation();
@@ -1750,7 +1712,7 @@ $('mBody').addEventListener('click', e => {
     .catch(err => { toast('保存できませんでした：' + err.message); b.disabled = false; });
 }, true);
 
-// ---------- 管理者：役職と権限 ----------
+// 権限
 let PD = null;
 function loadPerms(){
   $('permTable').innerHTML = '<p class="empty">読み込み中…</p>'; $('permMembers').innerHTML = '';
@@ -1802,7 +1764,7 @@ $('permMembers').onclick = e => {
   }
   b.classList.toggle('on');
 };
-// 代替わり：前の人の役職と個別の権限を、次の人に移す
+// 代替わり
 $('hoBtn').onclick = () => {
   const f = PD.members[+$('hoFrom').value], t = PD.members[+$('hoTo').value];
   if (!f || !t || f === t) { toast('前の人と次の人を選んでください'); return; }
@@ -1824,12 +1786,11 @@ $('permSave').onclick = () => {
   const b = $('permSave'); b.disabled = true;
   run('savePerms', PD.roles, assign, extra).then(d => {
     PD = d; renderPerms(); toast('権限の設定を保存しました');
-    // 自分の権限も変わっているかもしれないので、読み込み直す
     run('boot').then(x => { applyBoot(x); saveBoot(); if (!canAdmin()) location.hash = '#home'; else renderAdmin(); });
   }).catch(err => toast('保存できませんでした：' + err.message)).finally(() => { b.disabled = false; });
 };
 
-// ---------- カレンダー ----------
+// カレンダー
 const CAL_TYPES = [
   { t: '部会', cls: 'c-bu' }, { t: '生放送', cls: 'c-live' }, { t: 'イベント', cls: 'c-ev' },
   { t: '準備', cls: 'c-prep' }, { t: '撮影', cls: 'c-shoot' }, { t: '締め切り', cls: 'c-due' },
@@ -1838,7 +1799,6 @@ const CAL_TYPES = [
 let calY = 0, calM = 0, calSel = '';
 function ymd(y, m, d){ return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0'); }
 
-// 日付ごとの予定をまとめる
 function calEvents(){
   const ev = {}, onlyMine = $('calMine').checked;
   const add = (date, e) => (ev[date] = ev[date] || []).push(e);
@@ -1848,7 +1808,6 @@ function calEvents(){
     if (d.kind === 'イベント') add(d.date, { t: 'イベント', label: d.prepFor || d.memo || 'イベント', day: d });
     if (d.kind === '準備') add(d.date, { t: '準備', label: (d.prepFor || 'イベント') + ' 準備', day: d });
   });
-  // 追加した予定（役職会議など）
   (BOOT.events || []).forEach(x => add(x.date, { t: '予定', label: (x.start ? x.start + ' ' : '') + x.title, ev: x }));
   const v = BOOT.vtr;
   if (v) v.rows.forEach(r => {
@@ -1872,7 +1831,6 @@ function renderCal(){
   $('calLegend').className = 'legend cal';
   $('calLegend').innerHTML = CAL_TYPES.map(x => '<span style="--c:var(--' + { 'c-bu': 'pick', 'c-live': 'live', 'c-ev': 'event', 'c-prep': 'prep', 'c-shoot': 'vtr', 'c-due': 'due', 'c-ev2': 'memo' }[x.cls] + ')">' + x.t + '</span>').join('');
   const ev = calEvents();
-  // 日曜始まり。前後の月の日も埋める
   const first = new Date(calY, calM - 1, 1), start = new Date(calY, calM - 1, 1 - first.getDay());
   let html = W.split('').map(w => '<div class="wd">' + w + '</div>').join('');
   for (let i = 0; i < 42; i++) {
@@ -1888,7 +1846,6 @@ function renderCal(){
   renderCalDay(ev);
 }
 
-// 選んだ日の予定
 function renderCalDay(ev){
   const list = ev[calSel] || [];
   let html = '<h2>' + fmt(calSel) + ' の予定</h2>';
@@ -1940,7 +1897,6 @@ $('calDay').addEventListener('click', e => {
   const x = (BOOT.events || []).find(y => y.id === b.dataset.evedit);
   if (x) evForm(Object.assign({}, x, { to: x.to.slice() }));
 });
-// 予定の追加・編集の小窓
 function evForm(x){
   form = { kind: 'event', data: x };
   const roles = (BOOT.roleNames || []).filter(n => n !== '部員（全員）');
@@ -1985,7 +1941,7 @@ $('mBody').addEventListener('click', e => {
   }).catch(err => { toast('保存できませんでした：' + err.message); b.disabled = false; });
 }, true);
 
-// ---------- iPhoneなどのカレンダーへの反映 ----------
+// カレンダー購読（.ics）
 let calFeed = null;
 $('calFeedBox').addEventListener('toggle', () => {
   if (!$('calFeedBox').open || calFeed) return;
@@ -2042,7 +1998,7 @@ $('calFeed').addEventListener('click', e => {
 $('calToday').onclick = () => { calY = 0; calSel = ''; renderCal(); };
 $('calMine').onchange = () => renderCal();
 
-// ---------- 生放送の役職表：その場で編集（「生放送の割り当て」の権限がある人） ----------
+// 役職表のインライン編集
 $('lineupList').addEventListener('click', e => {
   const b = e.target.closest('[data-luedit]'); if (!b) return;
   luForm(b.dataset.luedit);
@@ -2086,18 +2042,12 @@ $('mBody').addEventListener('click', e => {
 
 $('toMyFree').onclick = () => { $('myFreeBox').open = true; $('myFreeBox').scrollIntoView({ behavior: 'smooth' }); };
 
-// ---------- バージョンと更新のお知らせ ----------
-// 更新するたびに、この番号を上げる（iOSと同じルール）
-//   新しい機能を追加したとき … 1の位を上げる（8.0 → 9.0）
-//   小さな改善               … 小数点の次を上げる（9.0 → 9.1）
-//   不具合の修正だけ          … もう1つ下を上げる（9.1 → 9.1.1）
-// これまでの大きな機能：1 出欠 / 2 生放送の役職表 / 3 空きコマ / 4 通知 /
-//                       5 ログイン / 6 管理者画面 / 7 VTR / 8 権限の管理 / 9 カレンダー
+// バージョン確認
+// major: 新機能 / minor: 改善 / patch: 修正
 const APP_VERSION = '9.5';
 $('ver').textContent = '放研ポータル v' + APP_VERSION;
 let newVersion = '';
 function checkUpdate(){
-  // GitHubに置いてある最新の index.html を、キャッシュを使わずに読んで番号を比べる
   fetch('index.html?check=' + Date.now(), { cache: 'no-store' })
     .then(r => r.ok ? r.text() : '')
     .then(t => {
@@ -2109,11 +2059,9 @@ function checkUpdate(){
     }).catch(() => {});
 }
 $('updBtn').onclick = () => {
-  // 古い画面を使わないよう、URLを変えて開き直す
   location.replace(location.pathname + '?v=' + encodeURIComponent(newVersion) + location.hash);
 };
 checkUpdate();
-// アプリに戻ってきたときにも確認する
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 
 show();
